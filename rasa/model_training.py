@@ -127,6 +127,7 @@ def train(
 
     if nlu_data.has_e2e_examples():
         rasa.shared.utils.common.mark_as_experimental_feature("end-to-end training")
+        training_type = TrainingType.END_TO_END
 
     if stories.is_empty() and nlu_data.contains_no_pure_nlu_data():
         rasa.shared.utils.cli.print_error(
