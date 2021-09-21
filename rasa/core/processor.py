@@ -566,16 +566,16 @@ class MessageProcessor:
                 "__message__": [message] if message else [],
                 "__tracker__": tracker,
             },
-            targets=["nlu_prediction_to_history_adder"],
+            targets=["run_RegexMessageHandlerGraphComponent"],
         )
         # TODO: JUZL:
-        tracker = results["nlu_prediction_to_history_adder"]
-        parse_data = tracker.latest_message.parse_data
+        message = results["run_RegexMessageHandlerGraphComponent"][0]
+        parse_data = message.as_dict(only_output_properties=True)
 
         logger.debug(
             "Received user message '{}' with intent '{}' "
             "and entities '{}'".format(
-                message.text, parse_data["intent"], parse_data["entities"]
+                parse_data["text"], parse_data["intent"], parse_data["entities"]
             )
         )
 

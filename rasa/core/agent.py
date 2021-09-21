@@ -21,6 +21,7 @@ from aiohttp import ClientError
 
 import rasa
 from rasa.engine.runner.interface import GraphRunner
+from rasa.engine.storage.storage import ModelMetadata
 import rasa.utils
 from rasa.core import jobs, training
 from rasa.core.channels.channel import OutputChannel, UserMessage
@@ -96,8 +97,7 @@ def _load_and_set_updated_model(
         fingerprint: Fingerprint of the supplied model at `model_directory`.
     """
     logger.debug(f"Found new model with fingerprint {fingerprint}. Loading...")
-    domain = None
-    agent.update_model(domain, fingerprint, model_directory)
+    agent.update_model(model_directory, fingerprint)
 
     logger.debug("Finished updating agent to new model.")
 
@@ -187,9 +187,12 @@ async def _pull_model_and_fingerprint(
                     )
                     return None
 
-                rasa.utils.io.unarchive(await resp.read(), model_directory)
+                model_path = Path(model_directory) / resp.headers.get("filename")
+                with open(model_path, "wb") as file:
+                    file.write(await resp.read())
+
                 logger.debug(
-                    "Unzipped model to '{}'".format(os.path.abspath(model_directory))
+                    "Saved model to '{}'".format(os.path.abspath(model_path))
                 )
 
                 # return the new fingerprint
@@ -285,6 +288,8 @@ async def load_agent(
     generator = None
     action_endpoint = None
 
+    # TODO: JUZL: get model_server from endpoints.
+
     if endpoints:
         broker = rasa.utils.common.run_in_loop(
             EventBroker.create(endpoints.event_broker)
@@ -376,19 +381,18 @@ class Agent:
         self._runner = runner
 
         self._set_fingerprint(fingerprint)
-        self.model_directory = model_directory
         self.model_server = model_server
         self.remote_storage = remote_storage
         self.path_to_model_archive = path_to_model_archive
 
     def update_model(
         self,
-        domain: Optional[Domain],
+        model_path: Union[Text, Path],
         fingerprint: Optional[Text],
-        model_directory: Optional[Text] = None,
     ) -> None:
-        # TODO: JUZL:
+        domain, runner = self.load_runner(model_path)
         self.domain = domain
+        self._runner = runner
 
         self._set_fingerprint(fingerprint)
 
@@ -396,8 +400,6 @@ class Agent:
         self.tracker_store.domain = domain
         if hasattr(self.nlg, "responses"):
             self.nlg.responses = domain.responses if domain else {}
-
-        self.model_directory = model_directory
 
     @classmethod
     def load(
@@ -415,19 +417,16 @@ class Agent:
     ) -> "Agent":
         """Load a persisted model from the passed path."""
 
-        #             new_config=new_config,
-        #             finetuning_epoch_fraction=finetuning_epoch_fraction,
-        #     # ensures the domain hasn't changed between test and train
-        #     domain.compare_with_specification(core_model)
+        # TODO: JUZL:
+        # new_config=new_config,
+        # finetuning_epoch_fraction=finetuning_epoch_fraction,
+        # # ensures the domain hasn't changed between test and train
+        # domain.compare_with_specification(core_model)
 
-        model_tar = rasa.model.get_latest_model(model_path)
-        model_path = tempfile.mkdtemp()
-        metadata, runner = loader.load_predict_graph_runner(
-            Path(model_path), Path(model_tar), LocalModelStorage, DaskGraphRunner,
-        )
+        domain, runner = cls.load_runner(model_path)
 
         agent = cls(
-            domain=metadata.domain,
+            domain=domain,
             generator=generator,
             tracker_store=tracker_store,
             lock_store=lock_store,
@@ -441,6 +440,17 @@ class Agent:
 
         agent.initialize_processor()
         return agent
+
+    @classmethod
+    def load_runner(cls, model_path: Union[Text, Path]) -> Tuple[Domain, GraphRunner]:
+        model_tar = rasa.model.get_latest_model(model_path)
+        if not model_tar:
+            raise ModelNotFound(f"No model found at path {model_path}.")
+        tmp_model_path = tempfile.mkdtemp()
+        metadata, runner = loader.load_predict_graph_runner(
+            Path(tmp_model_path), Path(model_tar), LocalModelStorage, DaskGraphRunner,
+        )
+        return metadata.domain, runner
 
     def is_ready(self) -> bool:
         """Check if all necessary components are instantiated to use agent."""

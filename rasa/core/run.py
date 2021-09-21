@@ -260,11 +260,7 @@ async def load_agent_on_start(
             model_path,
             model_server=model_server,
             remote_storage=remote_storage,
-            # interpreter=_interpreter,
-            generator=endpoints.nlg,
-            tracker_store=_tracker_store,
-            lock_store=_lock_store,
-            action_endpoint=endpoints.action,
+            endpoints=endpoints
         )
     except Exception as e:
         rasa.shared.utils.io.raise_warning(
@@ -274,6 +270,7 @@ async def load_agent_on_start(
         app.agent = None
 
     if not app.agent:
+        # TODO: JUZL: Do we want this?
         rasa.shared.utils.io.raise_warning(
             "Agent could not be loaded with the provided configuration. "
             "Load default agent without any model."

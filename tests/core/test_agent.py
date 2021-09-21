@@ -21,8 +21,7 @@ from rasa.core.agent import Agent, load_agent
 from rasa.core.channels.channel import UserMessage
 from rasa.shared.core.domain import InvalidDomain, Domain
 from rasa.shared.constants import INTENT_MESSAGE_PREFIX
-from rasa.core.policies.ensemble import PolicyEnsemble, SimplePolicyEnsemble
-from rasa.core.policies.memoization import MemoizationPolicy
+from rasa.core.policies.ensemble import PolicyEnsemble
 from rasa.utils.endpoints import EndpointConfig
 
 
@@ -41,7 +40,7 @@ def model_server_app(model_path: Text, model_hash: Text = "somehash") -> Sanic:
 
         return await response.file_stream(
             location=model_path,
-            headers={"ETag": model_hash, "filename": model_path},
+            headers={"ETag": model_hash, "filename": Path(model_path).name},
             mime_type="application/gzip",
         )
 
@@ -56,36 +55,19 @@ def model_server(
     return loop.run_until_complete(sanic_client(app))
 
 
-def test_training_data_is_reproducible():
-    training_data_file = "data/test_moodbot/data/stories.yml"
-    agent = Agent("data/test_moodbot/domain.yml")
-
-    training_data = agent.load_data(training_data_file)
-    # make another copy of training data
-    same_training_data = agent.load_data(training_data_file)
-
-    # test if both datasets are identical (including in the same order)
-    for i, x in enumerate(training_data):
-        assert str(x.as_dialogue()) == str(same_training_data[i].as_dialogue())
-
-
-async def test_agent_train(trained_rasa_model: Text):
+async def test_agent_train(default_agent: Agent):
     domain = Domain.load("data/test_domains/default_with_slots.yml")
-    loaded = Agent.load(trained_rasa_model)
 
-    # test domain
-    assert loaded.domain.action_names_or_texts == domain.action_names_or_texts
-    assert loaded.domain.intents == domain.intents
-    assert loaded.domain.entities == domain.entities
-    assert loaded.domain.responses == domain.responses
-    assert [s.name for s in loaded.domain.slots] == [s.name for s in domain.slots]
-
-    # test policies
-    assert isinstance(loaded.policy_ensemble, SimplePolicyEnsemble)
-    assert [type(p) for p in loaded.policy_ensemble.policies] == [
-        MemoizationPolicy,
-        RulePolicy,
+    assert default_agent.domain.action_names_or_texts == domain.action_names_or_texts
+    assert default_agent.domain.intents == domain.intents
+    assert default_agent.domain.entities == domain.entities
+    assert default_agent.domain.responses == domain.responses
+    assert [s.name for s in default_agent.domain.slots] == [
+        s.name for s in domain.slots
     ]
+
+    assert default_agent.processor
+    assert default_agent._runner
 
 
 @pytest.mark.parametrize(
@@ -100,15 +82,6 @@ async def test_agent_train(trained_rasa_model: Text):
                 "entities": [
                     {"entity": "name", "start": 6, "end": 21, "value": "Rasa"}
                 ],
-            },
-        ),
-        (
-            "text",
-            {
-                "text": "/text",
-                "intent": {"name": "text", "confidence": 1.0},
-                "intent_ranking": [{"name": "text", "confidence": 1.0}],
-                "entities": [],
             },
         ),
     ],
@@ -162,16 +135,8 @@ async def test_agent_with_model_server_in_thread(
 
     assert agent.fingerprint == "somehash"
     assert agent.domain.as_dict() == domain.as_dict()
+    assert agent._runner
 
-    expected_policies = PolicyEnsemble.load_metadata(
-        str(Path(unpacked_trained_rasa_model, "core"))
-    )["policy_names"]
-
-    agent_policies = {
-        rasa.shared.utils.common.module_path_from_instance(p)
-        for p in agent.policy_ensemble.policies
-    }
-    assert agent_policies == set(expected_policies)
     assert model_server.app.number_of_model_requests == 1
     jobs.kill_scheduler()
 
