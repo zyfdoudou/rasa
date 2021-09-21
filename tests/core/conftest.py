@@ -74,16 +74,7 @@ def default_channel() -> OutputChannel:
 
 @pytest.fixture
 async def default_processor(default_agent: Agent) -> MessageProcessor:
-    tracker_store = InMemoryTrackerStore(default_agent.domain)
-    lock_store = InMemoryLockStore()
-    return MessageProcessor(
-        default_agent.interpreter,
-        default_agent.policy_ensemble,
-        default_agent.domain,
-        tracker_store,
-        lock_store,
-        TemplatedNaturalLanguageGenerator(default_agent.domain.responses),
-    )
+    return default_agent.processor
 
 
 @pytest.fixture

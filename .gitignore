@@ -88,3 +88,5 @@ rasa/keys
 /results/
 # Local Netlify folder
 .netlify
+.rasa
+.graph_vis

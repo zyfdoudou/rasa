@@ -116,7 +116,7 @@ async def test_agent_train(trained_rasa_model: Text):
 async def test_agent_parse_message_using_nlu_interpreter(
     default_agent: Agent, text_message_data: Text, expected: Dict[Text, Any]
 ):
-    result = await default_agent.parse_message_using_nlu_interpreter(text_message_data)
+    result = await default_agent.parse_message(text_message_data)
     assert result == expected
 
 

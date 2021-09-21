@@ -6,7 +6,7 @@ from rasa.core.channels.channel import UserMessage
 from rasa.engine.graph import GraphComponent, ExecutionContext
 from rasa.engine.storage.resource import Resource
 from rasa.engine.storage.storage import ModelStorage
-from rasa.shared.nlu.constants import TEXT
+from rasa.shared.nlu.constants import TEXT, TEXT_TOKENS
 from rasa.shared.nlu.training_data.message import Message
 
 
@@ -37,7 +37,8 @@ class NLUMessageConverter(GraphComponent):
                     TEXT: message.text,
                     "message_id": message.message_id,
                     "metadata": message.metadata,
-                }
+                },
+                output_properties={TEXT_TOKENS}  # TODO: JUZL: Test this
             )
             for message in messages
         ]

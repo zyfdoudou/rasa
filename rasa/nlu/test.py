@@ -51,7 +51,6 @@ from rasa.shared.nlu.constants import (
     INTENT_NAME_KEY,
     PREDICTED_CONFIDENCE_KEY,
 )
-from rasa.model import get_model
 from rasa.nlu.components import ComponentBuilder
 from rasa.nlu.config import RasaNLUModelConfig
 from rasa.nlu.model import Interpreter, Trainer, TrainingData
@@ -1810,7 +1809,8 @@ async def compare_nlu(
                     f_score_results[model_name][run].append(0.0)
                     continue
 
-                model_path = os.path.join(get_model(model_path), "nlu")
+                # model_path = os.path.join(get_model(model_path), "nlu")
+                model_path = None
 
                 output_path = os.path.join(model_output_path, f"{model_name}_report")
                 result = run_evaluation(

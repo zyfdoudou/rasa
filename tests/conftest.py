@@ -43,7 +43,6 @@ from rasa.core.exporter import Exporter
 
 import rasa.core.run
 from rasa.core.tracker_store import InMemoryTrackerStore, TrackerStore
-from rasa.model import get_model
 from rasa.model_training import train, train_nlu_async
 from rasa.utils.common import TempDirectoryPath
 from rasa.shared.exceptions import RasaException
@@ -174,14 +173,19 @@ def event_loop(request: Request) -> Iterator[asyncio.AbstractEventLoop]:
 
 
 @pytest.fixture(scope="session")
-def _trained_default_agent(
-    tmp_path_factory: TempPathFactory, stories_path: Text, trained_async: Callable
+async def _trained_default_agent(
+    tmp_path_factory: TempPathFactory, stories_path: Text, nlu_data_path: Text, trained_async: Callable
 ) -> Agent:
     project_path = tmp_path_factory.mktemp("project")
 
     config = textwrap.dedent(
         f"""
     version: "{LATEST_TRAINING_DATA_FORMAT_VERSION}"
+    pipeline:
+      - name: WhitespaceTokenizer
+      - name: CountVectorsFeaturizer
+      - name: DIETClassifier
+        epochs: 1
     policies:
     - name: AugmentedMemoizationPolicy
       max_history: 3
@@ -191,10 +195,10 @@ def _trained_default_agent(
     config_path = project_path / "config.yml"
     rasa.shared.utils.io.write_text_file(config, config_path)
     model_path = train(
-        "data/test_domains/default_with_slots.yml", str(config_path), [stories_path]
+        "data/test_domains/default_with_slots.yml", str(config_path), [stories_path, nlu_data_path]
     ).model
 
-    return Agent.load_local_model(model_path)
+    return await load_agent(model_path)
 
 
 @pytest.fixture()
@@ -207,6 +211,7 @@ def reset_conversation_state(agent: Agent) -> Agent:
     # Clean tracker store after each test so tests don't affect each other
     agent.tracker_store = InMemoryTrackerStore(agent.domain)
     agent.domain.session_config = SessionConfig.default()
+    agent.initialize_processor()
     return agent
 
 
@@ -244,7 +249,8 @@ async def trained_nlu_moodbot_path(trained_nlu_async: Callable) -> Text:
 
 @pytest.fixture(scope="session")
 def unpacked_trained_moodbot_path(trained_moodbot_path: Text,) -> TempDirectoryPath:
-    return get_model(trained_moodbot_path)
+    # return get_model(trained_moodbot_path)
+    pass
 
 
 @pytest.fixture(scope="session")
@@ -254,11 +260,6 @@ async def trained_spacybot_path(trained_async: Callable) -> Text:
         config="data/test_spacybot/config.yml",
         training_files="data/test_spacybot/data/",
     )
-
-
-@pytest.fixture(scope="session")
-def unpacked_trained_spacybot_path(trained_spacybot_path: Text,) -> TempDirectoryPath:
-    return get_model(trained_spacybot_path)
 
 
 @pytest.fixture(scope="session")
@@ -284,8 +285,8 @@ async def unexpected_intent_policy_agent(
 
 
 @pytest.fixture(scope="module")
-def mood_agent(trained_moodbot_path: Text) -> Agent:
-    return Agent.load_local_model(model_path=trained_moodbot_path)
+async def mood_agent(trained_moodbot_path: Text) -> Agent:
+    return await load_agent(model_path=trained_moodbot_path)
 
 
 @pytest.fixture(scope="session")
@@ -376,9 +377,9 @@ async def trained_simple_rasa_model(
 def unpacked_trained_rasa_model(
     trained_rasa_model: Text,
 ) -> Generator[Text, None, None]:
-    with get_model(trained_rasa_model) as path:
-        yield path
-
+    # with get_model(trained_rasa_model) as path:
+    #     yield path
+    pass
 
 @pytest.fixture(scope="session")
 async def trained_core_model(
@@ -446,12 +447,12 @@ async def trained_e2e_model(
     )
 
 
-@pytest.fixture()
-def set_cache(monkeypatch: MonkeyPatch) -> Callable:
-    def set_cache(directory: Path) -> None:
-        monkeypatch.setattr(LocalTrainingCache, "._get_cache_location", directory)
-
-    return set_cache
+# @pytest.fixture()
+# def set_cache(monkeypatch: MonkeyPatch) -> Callable:
+#     def set_cache(directory: Path) -> None:
+#         monkeypatch.setattr(LocalTrainingCache, "._get_cache_location", directory)
+#
+#     return set_cache
 
 
 @pytest.fixture(scope="session")
@@ -728,15 +729,15 @@ def default_execution_context() -> ExecutionContext:
     return ExecutionContext(GraphSchema({}), uuid.uuid4().hex)
 
 
-@pytest.fixture(autouse=True)
-def use_temp_dir_for_cache(
-    monkeypatch: MonkeyPatch, tmp_path_factory: TempdirFactory
-) -> Path:
-    cache_dir = tmp_path_factory.mktemp(uuid.uuid4().hex)
-    monkeypatch.setattr(
-        LocalTrainingCache,
-        LocalTrainingCache._get_cache_location.__name__,
-        Mock(cache_dir),
-    )
-
-    return cache_dir
+# @pytest.fixture(autouse=True)
+# def use_temp_dir_for_cache(
+#     monkeypatch: MonkeyPatch, tmp_path_factory: TempdirFactory
+# ) -> Path:
+#     cache_dir = tmp_path_factory.mktemp(uuid.uuid4().hex)
+#     monkeypatch.setattr(
+#         LocalTrainingCache,
+#         LocalTrainingCache._get_cache_location.__name__,
+#         Mock(cache_dir),
+#     )
+#
+#     return cache_dir

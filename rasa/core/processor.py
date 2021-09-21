@@ -93,27 +93,17 @@ class MessageProcessor:
     ) -> Optional[List[Dict[Text, Any]]]:
         """Handle a single message with this processor."""
 
-        # preprocess message if necessary
-        # tracker = await self.log_message(message, should_save_tracker=False)
+        # TODO: JUZL: Handle message preprocessing
+
         tracker = await self.fetch_tracker_and_update_session(
             message.sender_id, message.output_channel, message.metadata
         )
 
-        # if not self.policy_ensemble or not self.domain:
-        #     # save tracker state to continue conversation from this state
-        #     self._save_tracker(tracker)
-        #     rasa.shared.utils.io.raise_warning(
-        #         "No policy ensemble or domain set. Skipping action prediction "
-        #         "and execution.",
-        #         docs=DOCS_URL_POLICIES,
-        #     )
-        #     return None
+        tracker = await self._predict_and_execute_next_action(message.output_channel, tracker, message)
 
-        await self._predict_and_execute_next_action(message, tracker)
-
-        # save tracker state to continue conversation from this state
         self._save_tracker(tracker)
 
+        # TODO: JUZL: do we need this?
         if isinstance(message.output_channel, CollectingOutputChannel):
             return message.output_channel.messages
 
@@ -128,8 +118,6 @@ class MessageProcessor:
         Returns:
             The prediction for the next action. `None` if no domain or policies loaded.
         """
-        # we have a Tracker instance for each user
-        # which maintains conversation state
         tracker = await self.fetch_tracker_and_update_session(sender_id)
         result = self.predict_next_with_tracker(tracker)
 
@@ -152,16 +140,7 @@ class MessageProcessor:
         Returns:
             The prediction for the next action. `None` if no domain or policies loaded.
         """
-        if not self.policy_ensemble or not self.domain:
-            # save tracker state to continue conversation from this state
-            rasa.shared.utils.io.raise_warning(
-                "No policy ensemble or domain set. Skipping action prediction."
-                "You should set a policy before training a model.",
-                docs=DOCS_URL_POLICIES,
-            )
-            return None
-
-        prediction = self._get_next_action_probabilities(tracker)
+        tracker, prediction = self._get_next_action_probabilities(tracker, None)
 
         scores = [
             {"action": a, "score": p}
@@ -322,8 +301,6 @@ class MessageProcessor:
         can be skipped if the tracker returned by this method is used for further
         processing and saved at a later stage.
         """
-        # we have a Tracker instance for each user
-        # which maintains conversation state
         tracker = await self.fetch_tracker_and_update_session(
             message.sender_id, message.output_channel, message.metadata
         )
@@ -331,7 +308,6 @@ class MessageProcessor:
         await self._handle_message_with_tracker(message, tracker)
 
         if should_save_tracker:
-            # save tracker state to continue conversation from this state
             self._save_tracker(tracker)
 
         return tracker
@@ -360,6 +336,7 @@ class MessageProcessor:
         Returns:
             The new conversation state. Note that the new state is also persisted.
         """
+        # TODO: JUZL:
         # we have a Tracker instance for each user
         # which maintains conversation state
         tracker = await self.fetch_tracker_and_update_session(sender_id, output_channel)
@@ -373,7 +350,7 @@ class MessageProcessor:
         return tracker
 
     def predict_next_action(
-        self, tracker: DialogueStateTracker, message: Optional[UserMessage]
+        self, tracker: DialogueStateTracker, message: Optional[UserMessage] = None
     ) -> Tuple[DialogueStateTracker, rasa.core.actions.action.Action, PolicyPrediction]:
         """Predicts the next action the bot should take after seeing x.
 
@@ -395,17 +372,7 @@ class MessageProcessor:
                 "The limit of actions to predict has been reached."
             )
 
-        results = self._runner.run(
-            inputs={
-                "__message__": [message] if message else [],
-                "__tracker__": tracker,
-            },
-            targets=["select_prediction", "nlu_prediction_to_history_adder"],
-        )
-        tracker = results["nlu_prediction_to_history_adder"]
-        prediction = results["select_prediction"]
-
-        # prediction = self._get_next_action_probabilities(tracker)
+        tracker, prediction = self._get_next_action_probabilities(tracker, message)
 
         action = rasa.core.actions.action.action_for_index(
             prediction.max_confidence_index, self.domain, self.action_endpoint
@@ -493,6 +460,7 @@ class MessageProcessor:
             tracker: The tracker to which the event should be added.
             output_channel: The output channel.
         """
+        # TODO: JUZL:
         if isinstance(entities, list):
             entity_list = entities
         elif isinstance(entities, dict):
@@ -575,7 +543,7 @@ class MessageProcessor:
     async def parse_message(
         self, message: UserMessage, tracker: Optional[DialogueStateTracker] = None
     ) -> Dict[Text, Any]:
-        """Interprete the passed message using the NLU interpreter.
+        """Interpret the passed message.
 
         Arguments:
             message: Message to handle
@@ -584,23 +552,25 @@ class MessageProcessor:
         Returns:
             Parsed data extracted from the message.
         """
+        # TODO: JUZL:
         # preprocess message if necessary
         if self.message_preprocessor is not None:
             text = self.message_preprocessor(message.text)
         else:
             text = message.text
 
-        # for testing - you can short-cut the NLU part with a message
-        # in the format /intent{"entity1": val1, "entity2": val2}
-        # parse_data is a dict of intent & entities
-        if text.startswith(INTENT_MESSAGE_PREFIX):
-            parse_data = await RegexInterpreter().parse(
-                text, message.message_id, tracker
-            )
-        else:
-            parse_data = await self.interpreter.parse(
-                text, message.message_id, tracker, metadata=message.metadata
-            )
+        if not tracker:
+            tracker = DialogueStateTracker("blah", [])
+        results = self._runner.run(
+            inputs={
+                "__message__": [message] if message else [],
+                "__tracker__": tracker,
+            },
+            targets=["nlu_prediction_to_history_adder"],
+        )
+        # TODO: JUZL:
+        tracker = results["nlu_prediction_to_history_adder"]
+        parse_data = tracker.latest_message.parse_data
 
         logger.debug(
             "Received user message '{}' with intent '{}' "
@@ -679,9 +649,8 @@ class MessageProcessor:
         )
 
     async def _predict_and_execute_next_action(
-        self, message: UserMessage, tracker: DialogueStateTracker
-    ) -> None:
-        output_channel = message.output_channel
+        self, output_channel: OutputChannel, tracker: DialogueStateTracker, message: Optional[UserMessage] = None,
+    ) -> DialogueStateTracker:
         # keep taking actions decided by the policy until it chooses to 'listen'
         should_predict_another_action = True
         # action loop. predicts actions until we hit action listen
@@ -703,6 +672,8 @@ class MessageProcessor:
             should_predict_another_action = await self._run_action(
                 action, tracker, output_channel, self.nlg, prediction
             )
+
+        return tracker
 
     @staticmethod
     def should_predict_another_action(action_name: Text) -> bool:
@@ -833,6 +804,7 @@ class MessageProcessor:
     def _warn_about_new_slots(
         self, tracker: DialogueStateTracker, action_name: Text, events: List[Event]
     ) -> None:
+        # TODO: JUZL:
         # these are the events from that action we have seen during training
 
         if (
@@ -932,16 +904,17 @@ class MessageProcessor:
         self.tracker_store.save(tracker)
 
     def _get_next_action_probabilities(
-        self, tracker: DialogueStateTracker
-    ) -> PolicyPrediction:
+        self, tracker: DialogueStateTracker, message: Optional[UserMessage] = None
+    ) -> Tuple[DialogueStateTracker, PolicyPrediction]:
         """Collect predictions from ensemble and return action and predictions."""
         followup_action = tracker.followup_action
         if followup_action:
             tracker.clear_followup_action()
             if followup_action in self.domain.action_names_or_texts:
-                return PolicyPrediction.for_action_name(
+                prediction = PolicyPrediction.for_action_name(
                     self.domain, followup_action, FOLLOWUP_ACTION
                 )
+                return tracker, prediction
 
             logger.error(
                 f"Trying to run unknown follow-up action '{followup_action}'. "
@@ -949,6 +922,19 @@ class MessageProcessor:
                 "and predict the next action."
             )
 
-        return self.policy_ensemble.probabilities_using_best_policy(
-            tracker, self.domain, self.interpreter
+        # TODO: JUZL:
+        targets = ["select_prediction"]
+        if message:
+            targets.append("nlu_prediction_to_history_adder")
+        results = self._runner.run(
+            inputs={
+                "__message__": [message] if message else [],
+                "__tracker__": tracker,
+            },
+            targets=targets,
         )
+        # TODO: JUZL:
+        new_tracker = results.get("nlu_prediction_to_history_adder")
+        tracker = new_tracker if new_tracker else tracker
+        prediction = results["select_prediction"]
+        return tracker, prediction

@@ -54,6 +54,7 @@ class NLUPredictionToHistoryAdder(GraphComponent):
                 message.data.get(TEXT),
                 message.data.get(INTENT),
                 message.data.get(ENTITIES),
+                message.as_dict(only_output_properties=True),
                 input_channel=original_message.input_channel,
                 message_id=message.data.get("message_id"),
                 metadata=original_message.metadata,

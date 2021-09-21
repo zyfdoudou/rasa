@@ -190,7 +190,6 @@ class DefaultV1Recipe(Recipe):
         from rasa.core.policies.ted_policy import TEDPolicyGraphComponent  # noqa: F401
         from rasa.core.policies.memoization import (  # noqa: F401
             MemoizationPolicyGraphComponent,
-            AugmentedMemoizationPolicyGraphComponent,
         )
         from rasa.core.policies.rule_policy import (  # noqa: F401
             RulePolicyGraphComponent,

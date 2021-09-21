@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from datetime import datetime
 import logging
 from typing import Any, Dict, List, Optional, Text
 
@@ -98,6 +100,9 @@ class DaskGraphRunner(GraphRunner):
     ) -> Dict[Text, Any]:
         """Runs the graph (see parent class for full docstring)."""
         run_graph = self._instantiated_graph_to_dask_graph(self._instantiated_graph)
+
+        filename = f"./.graph_vis/graph_vis_{datetime.now().isoformat()}"
+        dask.visualize(run_graph, filename=filename)
 
         if inputs:
             self._add_inputs_to_graph(inputs, run_graph)

@@ -299,7 +299,7 @@ class LocalTrainingCache(TrainingCache):
         # Use `TempDirectoryPath` instead of `tempfile.TemporaryDirectory` as this
         # leads to errors on Windows when the context manager tries to delete an
         # already deleted temporary directory (e.g. https://bugs.python.org/issue29982)
-        with rasa.model.TempDirectoryPath(tempfile.mkdtemp()) as temp_dir:
+        with rasa.utils.common.TempDirectoryPath(tempfile.mkdtemp()) as temp_dir:
             tmp_path = Path(temp_dir)
             try:
 

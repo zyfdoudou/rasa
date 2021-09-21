@@ -195,10 +195,10 @@ def test_nlu(
 ) -> None:
     """Tests the NLU Model."""
     from rasa.nlu.test import run_evaluation
-    from rasa.model import get_model
 
     try:
-        unpacked_model = get_model(model)
+        # unpacked_model = get_model(model)
+        unpacked_model = None
     except ModelNotFound:
         rasa.shared.utils.cli.print_error(
             "Could not find any model. Use 'rasa train nlu' to train a "

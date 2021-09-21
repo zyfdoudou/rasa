@@ -739,7 +739,7 @@ def create_app(
         verbosity = event_verbosity_parameter(request, EventVerbosity.AFTER_RESTART)
         until_time = rasa.utils.endpoints.float_arg(request, "until")
 
-        tracker = await app.agent._processor.fetch_tracker_with_initial_session(
+        tracker = await app.agent.processor.fetch_tracker_with_initial_session(
             conversation_id
         )
 
@@ -1321,7 +1321,7 @@ def create_app(
         try:
             data = emulator.normalise_request_json(request.json)
             try:
-                parsed_data = await app.agent.parse_message_using_nlu_interpreter(
+                parsed_data = await app.agent.parse_message(
                     data.get("text")
                 )
             except Exception as e:

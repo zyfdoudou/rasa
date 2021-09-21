@@ -235,8 +235,9 @@ class RegexMessageHandlerGraphComponent(GraphComponent):
                     {
                         ENTITY_ATTRIBUTE_TYPE: entity_type,
                         ENTITY_ATTRIBUTE_VALUE: entity_value,
-                        ENTITY_ATTRIBUTE_START: match.start(),
-                        ENTITY_ATTRIBUTE_END: match.end(),
+                        # TODO: JUZL: Test this!
+                        ENTITY_ATTRIBUTE_START: match.start(ENTITIES),
+                        ENTITY_ATTRIBUTE_END: match.end(ENTITIES),
                     }
                 )
         return entities

@@ -60,7 +60,6 @@ def add_subparser(
 def shell_nlu(args: argparse.Namespace) -> None:
     from rasa.cli.utils import get_validated_path
     from rasa.shared.constants import DEFAULT_MODELS_PATH
-    from rasa.model import get_model, get_model_subdirectories
     import rasa.nlu.run
 
     args.connector = "cmdline"
@@ -68,7 +67,8 @@ def shell_nlu(args: argparse.Namespace) -> None:
     model = get_validated_path(args.model, "model", DEFAULT_MODELS_PATH)
 
     try:
-        model_path = get_model(model)
+        # model_path = get_model(model)
+        model_path = None
     except ModelNotFound:
         print_error(
             "No model found. Train a model before running the "
@@ -76,7 +76,8 @@ def shell_nlu(args: argparse.Namespace) -> None:
         )
         return
 
-    _, nlu_model = get_model_subdirectories(model_path)
+    # _, nlu_model = get_model_subdirectories(model_path)
+    _, nlu_model = (None, None)
 
     if not nlu_model:
         print_error(
@@ -92,14 +93,14 @@ def shell_nlu(args: argparse.Namespace) -> None:
 def shell(args: argparse.Namespace) -> None:
     from rasa.cli.utils import get_validated_path
     from rasa.shared.constants import DEFAULT_MODELS_PATH
-    from rasa.model import get_model, get_model_subdirectories
 
     args.connector = "cmdline"
 
     model = get_validated_path(args.model, "model", DEFAULT_MODELS_PATH)
 
     try:
-        model_path = get_model(model)
+        # model_path = get_model(model)
+        model_path = None
     except ModelNotFound:
         print_error(
             "No model found. Train a model before running the "
@@ -107,7 +108,8 @@ def shell(args: argparse.Namespace) -> None:
         )
         return
 
-    core_model, nlu_model = get_model_subdirectories(model_path)
+    # core_model, nlu_model = get_model_subdirectories(model_path)
+    core_model, nlu_model = None, None
 
     if not core_model:
         import rasa.nlu.run

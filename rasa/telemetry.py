@@ -9,6 +9,7 @@ import multiprocessing
 import os
 from pathlib import Path
 import platform
+from subprocess import CalledProcessError, DEVNULL, check_output
 import sys
 import textwrap
 import typing
@@ -465,6 +466,21 @@ def with_default_context_fields(
     return {**_default_context_fields(), **context}
 
 
+def project_fingerprint() -> Optional[Text]:
+    """Create a hash for the project in the current working directory.
+
+    Returns:
+        project hash
+    """
+    try:
+        remote = check_output(  # skipcq:BAN-B607,BAN-B603
+            ["git", "remote", "get-url", "origin"], stderr=DEVNULL
+        )
+        return hashlib.sha256(remote).hexdigest()
+    except (CalledProcessError, OSError):
+        return None
+
+
 def _default_context_fields() -> Dict[Text, Any]:
     """Return a dictionary that contains the default context values.
 
@@ -480,7 +496,7 @@ def _default_context_fields() -> Dict[Text, Any]:
         TELEMETRY_CONTEXT = {
             "os": {"name": platform.system(), "version": platform.release()},
             "ci": in_continuous_integration(),
-            "project": model.project_fingerprint(),
+            "project": project_fingerprint(),
             "directory": _hash_directory_path(os.getcwd()),
             "python": sys.version.split(" ")[0],
             "rasa_open_source": rasa.__version__,
