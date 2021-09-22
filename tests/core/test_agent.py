@@ -67,7 +67,7 @@ async def test_agent_train(default_agent: Agent):
     ]
 
     assert default_agent.processor
-    assert default_agent._runner
+    assert default_agent.graph_runner
 
 
 @pytest.mark.parametrize(
@@ -135,7 +135,7 @@ async def test_agent_with_model_server_in_thread(
 
     assert agent.fingerprint == "somehash"
     assert agent.domain.as_dict() == domain.as_dict()
-    assert agent._runner
+    assert agent.graph_runner
 
     assert model_server.app.number_of_model_requests == 1
     jobs.kill_scheduler()
@@ -157,122 +157,20 @@ async def test_wait_time_between_pulls_without_interval(
     await rasa.core.agent.load_from_server(agent, model_server=model_endpoint_config)
 
 
-async def test_pull_model_with_invalid_domain(
-    model_server: TestClient, monkeypatch: MonkeyPatch, caplog: LogCaptureFixture
-):
-    # mock `Domain.load()` as if the domain contains invalid YAML
-    error_message = "domain is invalid"
-    mock_load = Mock(side_effect=InvalidDomain(error_message))
-
-    monkeypatch.setattr(Domain, "load", mock_load)
-    model_endpoint_config = EndpointConfig.from_dict(
-        {"url": model_server.make_url("/model"), "wait_time_between_pulls": None}
-    )
-
-    agent = Agent()
-    await rasa.core.agent.load_from_server(agent, model_server=model_endpoint_config)
-
-    # `Domain.load()` was called
-    mock_load.assert_called_once()
-
-    # error was logged
-    assert error_message in caplog.text
-
-
 async def test_load_agent(trained_rasa_model: Text):
     agent = await load_agent(model_path=trained_rasa_model)
 
     assert agent.tracker_store is not None
-    assert agent.interpreter is not None
-    assert agent.model_directory is not None
+    assert agent.lock_store is not None
+    assert agent.processor is not None
+    assert agent.graph_runner is not None
 
-
-@pytest.mark.parametrize(
-    "policy_config", [{"policies": [{"name": "MemoizationPolicy"}]}]
-)
-def test_form_without_form_policy(policy_config: Dict[Text, List[Text]]):
-    with pytest.raises(InvalidDomain) as execinfo:
-        Agent(
-            domain=Domain.from_dict({"forms": {"restaurant_form": {}}}),
-            policies=PolicyEnsemble.from_dict(policy_config),
-        )
-    assert "have not added the 'RulePolicy'" in str(execinfo.value)
-
-
-def test_forms_with_suited_policy():
-    policy_config = {"policies": [{"name": RulePolicy.__name__}]}
-    # Doesn't raise
-    Agent(
-        domain=Domain.from_dict({"forms": {"restaurant_form": {}}}),
-        policies=PolicyEnsemble.from_dict(policy_config),
-    )
-
-
-@pytest.mark.parametrize(
-    "domain, policy_config",
-    [
-        (
-            {"actions": ["other-action"]},
-            {
-                "policies": [
-                    {"name": "RulePolicy", "core_fallback_action_name": "my_fallback"}
-                ]
-            },
-        )
-    ],
-)
-def test_rule_policy_without_fallback_action_present(
-    domain: Dict[Text, Any], policy_config: Dict[Text, Any]
-):
-    with pytest.raises(InvalidDomain) as execinfo:
-        Agent(
-            domain=Domain.from_dict(domain),
-            policies=PolicyEnsemble.from_dict(policy_config),
-        )
-
-    assert RulePolicy.__name__ in str(execinfo.value)
-
-
-@pytest.mark.parametrize(
-    "domain, policy_config",
-    [
-        (
-            {"actions": ["other-action"]},
-            {
-                "policies": [
-                    {
-                        "name": "RulePolicy",
-                        "core_fallback_action_name": "my_fallback",
-                        "enable_fallback_prediction": False,
-                    }
-                ]
-            },
-        ),
-        (
-            {"actions": ["my-action"]},
-            {
-                "policies": [
-                    {"name": "RulePolicy", "core_fallback_action_name": "my-action"}
-                ]
-            },
-        ),
-        ({}, {"policies": [{"name": "MemoizationPolicy"}]}),
-    ],
-)
-def test_rule_policy_valid(domain: Dict[Text, Any], policy_config: Dict[Text, Any]):
-    # no exception should be thrown
-    Agent(
-        domain=Domain.from_dict(domain),
-        policies=PolicyEnsemble.from_dict(policy_config),
-    )
+# TODO: JUZL: more load_agent tests
 
 
 async def test_agent_update_model_none_domain(trained_rasa_model: Text):
     agent = await load_agent(model_path=trained_rasa_model)
-    agent.update_model(
-        None, None, agent.fingerprint, agent.interpreter, agent.model_directory
-    )
-
+    agent.domain = None
     assert agent.domain is not None
     sender_id = "test_sender_id"
     message = UserMessage("hello", sender_id=sender_id)

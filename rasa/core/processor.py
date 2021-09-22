@@ -68,7 +68,7 @@ MAX_NUMBER_OF_PREDICTIONS = int(os.environ.get("MAX_NUMBER_OF_PREDICTIONS", "10"
 class MessageProcessor:
     def __init__(
         self,
-        runner: GraphRunner,
+        graph_runner: GraphRunner,
         domain: Domain,
         tracker_store: rasa.core.tracker_store.TrackerStore,
         lock_store: LockStore,
@@ -78,7 +78,7 @@ class MessageProcessor:
         message_preprocessor: Optional[LambdaType] = None,
         on_circuit_break: Optional[LambdaType] = None,
     ) -> None:
-        self._runner = runner
+        self.graph_runner = graph_runner
         self.nlg = generator
         self.domain = domain
         self.tracker_store = tracker_store
@@ -561,7 +561,7 @@ class MessageProcessor:
 
         if not tracker:
             tracker = DialogueStateTracker("blah", [])
-        results = self._runner.run(
+        results = self.graph_runner.run(
             inputs={
                 "__message__": [message] if message else [],
                 "__tracker__": tracker,
@@ -926,7 +926,7 @@ class MessageProcessor:
         targets = ["select_prediction"]
         if message:
             targets.append("nlu_prediction_to_history_adder")
-        results = self._runner.run(
+        results = self.graph_runner.run(
             inputs={
                 "__message__": [message] if message else [],
                 "__tracker__": tracker,

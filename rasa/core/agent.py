@@ -367,18 +367,14 @@ class Agent:
         model_server: Optional[EndpointConfig] = None,
         remote_storage: Optional[Text] = None,
         path_to_model_archive: Optional[Text] = None,
-        runner: Optional[GraphRunner] = None,
+        graph_runner: Optional[GraphRunner] = None,
     ):
-        # PolicyEnsemble.check_domain_ensemble_compatibility(
-        #     self.policy_ensemble, self.domain
-        # )
-
         self.domain = domain
         self.nlg = NaturalLanguageGenerator.create(generator, self.domain)
         self.tracker_store = self._create_tracker_store(tracker_store, self.domain)
         self.lock_store = self._create_lock_store(lock_store)
         self.action_endpoint = action_endpoint
-        self._runner = runner
+        self.graph_runner = graph_runner
 
         self._set_fingerprint(fingerprint)
         self.model_server = model_server
@@ -390,9 +386,9 @@ class Agent:
         model_path: Union[Text, Path],
         fingerprint: Optional[Text],
     ) -> None:
-        domain, runner = self.load_runner(model_path)
+        domain, graph_runner = self.load_graph_runner(model_path)
         self.domain = domain
-        self._runner = runner
+        self.graph_runner = graph_runner
 
         self._set_fingerprint(fingerprint)
 
@@ -423,7 +419,7 @@ class Agent:
         # # ensures the domain hasn't changed between test and train
         # domain.compare_with_specification(core_model)
 
-        domain, runner = cls.load_runner(model_path)
+        domain, graph_runner = cls.load_graph_runner(model_path)
 
         agent = cls(
             domain=domain,
@@ -435,22 +431,23 @@ class Agent:
             model_server=model_server,
             remote_storage=remote_storage,
             path_to_model_archive=path_to_model_archive,
-            runner=runner,
+            graph_runner=graph_runner,
         )
 
         agent.initialize_processor()
         return agent
 
+    # TODO: move to processor?
     @classmethod
-    def load_runner(cls, model_path: Union[Text, Path]) -> Tuple[Domain, GraphRunner]:
+    def load_graph_runner(cls, model_path: Union[Text, Path]) -> Tuple[Domain, GraphRunner]:
         model_tar = rasa.model.get_latest_model(model_path)
         if not model_tar:
             raise ModelNotFound(f"No model found at path {model_path}.")
         tmp_model_path = tempfile.mkdtemp()
-        metadata, runner = loader.load_predict_graph_runner(
+        metadata, graph_runner = loader.load_predict_graph_runner(
             Path(tmp_model_path), Path(model_tar), LocalModelStorage, DaskGraphRunner,
         )
-        return metadata.domain, runner
+        return metadata.domain, graph_runner
 
     def is_ready(self) -> bool:
         """Check if all necessary components are instantiated to use agent."""
@@ -682,7 +679,7 @@ class Agent:
     # TODO: JUZL:
     def initialize_processor(self) -> None:
         processor = MessageProcessor(
-            runner=self._runner,
+            graph_runner=self.graph_runner,
             domain=self.domain,
             tracker_store=self.tracker_store,
             lock_store=self.lock_store,
