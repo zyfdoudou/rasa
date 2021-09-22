@@ -412,19 +412,6 @@ async def trained_nlu_model(
 
 
 @pytest.fixture(scope="session")
-async def trained_nlu_no_domain_model(
-    trained_async: Callable,
-    nlu_data_path: Text,
-    stack_config_path: Text,
-) -> Text:
-    trained_nlu_model_path = await trained_async(
-        domain=None, config=stack_config_path, training_files=[nlu_data_path],
-    )
-
-    return trained_nlu_model_path
-
-
-@pytest.fixture(scope="session")
 def _trained_e2e_model_cache(tmp_path_factory: TempPathFactory) -> Path:
     return tmp_path_factory.mktemp("cache")
 

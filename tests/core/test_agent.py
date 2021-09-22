@@ -171,10 +171,11 @@ async def test_load_agent(trained_rasa_model: Text):
 # TODO: JUZL: more load_agent tests
 
 
-async def test_agent_update_model_none_domain(
-    trained_nlu_no_domain_model: Text, monkeypatch: MonkeyPatch
+# TODO: JUZL: handle_message with nlu only model
+async def test_agent_handle_message_with_nlu_only_model(
+    trained_nlu_model: Text, monkeypatch: MonkeyPatch
 ):
-    agent = await load_agent(model_path=trained_nlu_no_domain_model)
+    agent = await load_agent(model_path=trained_nlu_model)
     assert agent.domain is not None
     sender_id = "test_sender_id"
     message = UserMessage("hello", sender_id=sender_id)
