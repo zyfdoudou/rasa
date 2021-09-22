@@ -370,6 +370,10 @@ class Agent:
         graph_runner: Optional[GraphRunner] = None,
     ):
         self.domain = domain
+
+        # TODO: JUZL: Is this tested?
+        self.domain.check_missing_responses()
+
         self.nlg = NaturalLanguageGenerator.create(generator, self.domain)
         self.tracker_store = self._create_tracker_store(tracker_store, self.domain)
         self.lock_store = self._create_lock_store(lock_store)
@@ -386,7 +390,7 @@ class Agent:
         model_path: Union[Text, Path],
         fingerprint: Optional[Text],
     ) -> None:
-        domain, graph_runner = self.load_graph_runner(model_path)
+        domain, graph_runner = self.unpack_model(model_path)
         self.domain = domain
         self.graph_runner = graph_runner
 
@@ -396,6 +400,9 @@ class Agent:
         self.tracker_store.domain = domain
         if hasattr(self.nlg, "responses"):
             self.nlg.responses = domain.responses if domain else {}
+
+        # TODO: JUZL: Do we test this actually happens?
+        self.initialize_processor()
 
     @classmethod
     def load(
@@ -419,7 +426,7 @@ class Agent:
         # # ensures the domain hasn't changed between test and train
         # domain.compare_with_specification(core_model)
 
-        domain, graph_runner = cls.load_graph_runner(model_path)
+        domain, graph_runner = cls.unpack_model(model_path)
 
         agent = cls(
             domain=domain,
@@ -437,9 +444,9 @@ class Agent:
         agent.initialize_processor()
         return agent
 
-    # TODO: move to processor?
-    @classmethod
-    def load_graph_runner(cls, model_path: Union[Text, Path]) -> Tuple[Domain, GraphRunner]:
+    # TODO: JUZL: Should this be here?
+    @staticmethod
+    def unpack_model(model_path: Union[Text, Path]) -> Tuple[Domain, GraphRunner]:
         model_tar = rasa.model.get_latest_model(model_path)
         if not model_tar:
             raise ModelNotFound(f"No model found at path {model_path}.")
@@ -662,6 +669,7 @@ class Agent:
 
         if persistor is not None:
             target_path = tempfile.mkdtemp()
+            # TODO: JUZL: This needs to not unpack
             persistor.retrieve(model_name, target_path)
 
             return Agent.load(

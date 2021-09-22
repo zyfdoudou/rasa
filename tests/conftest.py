@@ -247,6 +247,7 @@ async def trained_nlu_moodbot_path(trained_nlu_async: Callable) -> Text:
     )
 
 
+# TODO: JUZL:
 @pytest.fixture(scope="session")
 def unpacked_trained_moodbot_path(trained_moodbot_path: Text,) -> TempDirectoryPath:
     # return get_model(trained_moodbot_path)
@@ -373,6 +374,7 @@ async def trained_simple_rasa_model(
     return trained_stack_model_path
 
 
+# TODO: JUZL:
 @pytest.fixture(scope="session")
 def unpacked_trained_rasa_model(
     trained_rasa_model: Text,
@@ -404,6 +406,19 @@ async def trained_nlu_model(
 ) -> Text:
     trained_nlu_model_path = await trained_async(
         domain=domain_path, config=stack_config_path, training_files=[nlu_data_path],
+    )
+
+    return trained_nlu_model_path
+
+
+@pytest.fixture(scope="session")
+async def trained_nlu_no_domain_model(
+    trained_async: Callable,
+    nlu_data_path: Text,
+    stack_config_path: Text,
+) -> Text:
+    trained_nlu_model_path = await trained_async(
+        domain=None, config=stack_config_path, training_files=[nlu_data_path],
     )
 
     return trained_nlu_model_path

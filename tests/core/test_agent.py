@@ -1,6 +1,7 @@
 import asyncio
 from pathlib import Path
 from typing import Any, Dict, Text, List, Callable, Optional
+from unittest import mock
 from unittest.mock import Mock
 
 import pytest
@@ -12,6 +13,7 @@ from sanic.request import Request
 from sanic.response import StreamingHTTPResponse
 
 import rasa.core
+from rasa.engine.storage.storage import ModelMetadata
 from rasa.exceptions import ModelNotFound
 import rasa.shared.utils.common
 from rasa.core.policies.rule_policy import RulePolicy
@@ -165,12 +167,14 @@ async def test_load_agent(trained_rasa_model: Text):
     assert agent.processor is not None
     assert agent.graph_runner is not None
 
+
 # TODO: JUZL: more load_agent tests
 
 
-async def test_agent_update_model_none_domain(trained_rasa_model: Text):
-    agent = await load_agent(model_path=trained_rasa_model)
-    agent.domain = None
+async def test_agent_update_model_none_domain(
+    trained_nlu_no_domain_model: Text, monkeypatch: MonkeyPatch
+):
+    agent = await load_agent(model_path=trained_nlu_no_domain_model)
     assert agent.domain is not None
     sender_id = "test_sender_id"
     message = UserMessage("hello", sender_id=sender_id)
