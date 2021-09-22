@@ -99,7 +99,9 @@ class MessageProcessor:
             message.sender_id, message.output_channel, message.metadata
         )
 
-        tracker = await self._predict_and_execute_next_action(message.output_channel, tracker, message)
+        tracker = await self._predict_and_execute_next_action(
+            message.output_channel, tracker, message
+        )
 
         self._save_tracker(tracker)
 
@@ -555,13 +557,8 @@ class MessageProcessor:
         """
         # TODO: JUZL:
         # preprocess message if necessary
-        if self.message_preprocessor is not None:
-            text = self.message_preprocessor(message.text)
-        else:
-            text = message.text
 
-        if not tracker:
-            tracker = DialogueStateTracker("blah", [])
+        # TODO: JUZL: dedupe
         results = self.graph_runner.run(
             inputs={
                 "__message__": [message] if message else [],
@@ -570,8 +567,8 @@ class MessageProcessor:
             targets=["run_RegexMessageHandlerGraphComponent"],
         )
         # TODO: JUZL:
-        message = results["run_RegexMessageHandlerGraphComponent"][0]
-        parse_data = message.as_dict(only_output_properties=True)
+        parsed_message, _, _ = results["output_provider"]
+        parse_data = parsed_message.as_dict(only_output_properties=True)
 
         logger.debug(
             "Received user message '{}' with intent '{}' "
@@ -650,7 +647,10 @@ class MessageProcessor:
         )
 
     async def _predict_and_execute_next_action(
-        self, output_channel: OutputChannel, tracker: DialogueStateTracker, message: Optional[UserMessage] = None,
+        self,
+        output_channel: OutputChannel,
+        tracker: DialogueStateTracker,
+        message: Optional[UserMessage] = None,
     ) -> DialogueStateTracker:
         # keep taking actions decided by the policy until it chooses to 'listen'
         should_predict_another_action = True
@@ -904,6 +904,7 @@ class MessageProcessor:
     def _save_tracker(self, tracker: DialogueStateTracker) -> None:
         self.tracker_store.save(tracker)
 
+    # TODO: JUZL: rename this
     def _get_next_action_probabilities(
         self, tracker: DialogueStateTracker, message: Optional[UserMessage] = None
     ) -> Tuple[DialogueStateTracker, PolicyPrediction]:
@@ -923,10 +924,7 @@ class MessageProcessor:
                 "and predict the next action."
             )
 
-        # TODO: JUZL:
-        targets = ["select_prediction"]
-        if message:
-            targets.append("nlu_prediction_to_history_adder")
+        targets = ["output_provider"]
         results = self.graph_runner.run(
             inputs={
                 "__message__": [message] if message else [],
@@ -934,8 +932,7 @@ class MessageProcessor:
             },
             targets=targets,
         )
-        # TODO: JUZL:
-        new_tracker = results.get("nlu_prediction_to_history_adder")
-        tracker = new_tracker if new_tracker else tracker
-        prediction = results["select_prediction"]
-        return tracker, prediction
+        parsed_message, tracker_with_added_message, policy_prediction = results.get(
+            "output_provider"
+        )
+        return tracker_with_added_message, policy_prediction

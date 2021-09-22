@@ -29,6 +29,9 @@ from rasa.graph_components.providers.domain_without_response_provider import (
 from rasa.graph_components.providers.nlu_training_data_provider import (
     NLUTrainingDataProvider,
 )
+from rasa.graph_components.providers.prediction_output_provider import (
+    PredictionOutputProvider,
+)
 from rasa.graph_components.providers.rule_only_provider import RuleOnlyDataProvider
 from rasa.graph_components.providers.story_graph_provider import StoryGraphProvider
 from rasa.graph_components.providers.training_tracker_provider import (
@@ -637,21 +640,29 @@ class DefaultV1Recipe(Recipe):
         predict_config = copy.deepcopy(config)
         predict_nodes = {}
 
-        last_run_node = None
-
+        output_provider_needs = {}
         if self._use_nlu:
-            last_run_node = self._add_nlu_predict_nodes(
+            last_run_nlu_node = self._add_nlu_predict_nodes(
                 predict_config, predict_nodes, train_nodes
             )
+            output_provider_needs["parsed_messages"] = last_run_nlu_node
+            output_provider_needs[
+                "tracker_with_added_message"
+            ] = "nlu_prediction_to_history_adder"
 
         if self._use_core:
             self._add_core_predict_nodes(
-                predict_config,
-                predict_nodes,
-                last_run_node,
-                train_nodes,
-                preprocessors,
+                predict_config, predict_nodes, train_nodes, preprocessors,
             )
+            output_provider_needs["policy_prediction"] = "select_prediction"
+
+        predict_nodes["output_provider"] = SchemaNode(
+            needs=output_provider_needs,
+            uses=PredictionOutputProvider,
+            constructor_name="create",
+            fn="provide",
+            config={},
+        )
 
         return predict_nodes
 
@@ -726,12 +737,13 @@ class DefaultV1Recipe(Recipe):
             RegexMessageHandlerGraphComponent,
         )
 
-        node_name = f"run_{RegexMessageHandlerGraphComponent.__name__}"
+        regex_handler_node_name = f"run_{RegexMessageHandlerGraphComponent.__name__}"
 
         domain_needs = {}
         if self._use_core:
             domain_needs["domain"] = "domain_provider"
-        predict_nodes[node_name] = SchemaNode(
+
+        predict_nodes[regex_handler_node_name] = SchemaNode(
             **default_predict_kwargs,
             needs={"messages": last_run_node, **domain_needs},
             uses=RegexMessageHandlerGraphComponent,
@@ -739,7 +751,22 @@ class DefaultV1Recipe(Recipe):
             config={},
         )
 
-        return node_name
+        predict_nodes["nlu_prediction_to_history_adder"] = SchemaNode(
+            **default_predict_kwargs,
+            # TODO: I think there is a bug in our Dask Runner for this case as
+            # the input will override `messages`
+            needs={
+                "predictions": regex_handler_node_name,
+                "original_messages": "__message__",
+                "tracker": "__tracker__",
+                **domain_needs,
+            },
+            uses=NLUPredictionToHistoryAdder,
+            fn="add",
+            config={},
+        )
+
+        return regex_handler_node_name
 
     def _add_nlu_predict_node_from_train(
         self,
@@ -789,25 +816,9 @@ class DefaultV1Recipe(Recipe):
         self,
         predict_config: Dict[Text, Any],
         predict_nodes: Dict[Text, SchemaNode],
-        last_run_node: Optional[Text],
         train_nodes: Dict[Text, SchemaNode],
         preprocessors: List[Text],
     ) -> None:
-        if last_run_node:
-            predict_nodes["nlu_prediction_to_history_adder"] = SchemaNode(
-                **default_predict_kwargs,
-                # TODO: I think there is a bug in our Dask Runner for this case as
-                # the input will override `messages`
-                needs={
-                    "predictions": last_run_node,
-                    "domain": "domain_provider",
-                    "original_messages": "__message__",
-                    "tracker": "__tracker__",
-                },
-                uses=NLUPredictionToHistoryAdder,
-                fn="add",
-                config={},
-            )
         predict_nodes["domain_provider"] = SchemaNode(
             **default_predict_kwargs,
             needs={},
@@ -824,9 +835,6 @@ class DefaultV1Recipe(Recipe):
             node_with_e2e_features = self._add_end_to_end_features_for_inference(
                 predict_nodes, preprocessors
             )
-            # The tracker has to be provided via `runner.run(..., inputs=...)` in this
-            # case
-            nlu_merge_needs = {"tracker": "nlu_prediction_to_history_adder"}
 
         rule_only_data_provider_name = "rule_only_data_provider"
         rule_policy_resource = None

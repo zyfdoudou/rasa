@@ -393,7 +393,11 @@ class GraphNode:
         Returns:
             The node name and its output.
         """
-        received_inputs: Dict[Text, Any] = dict(inputs_from_previous_nodes)
+        try:
+            received_inputs: Dict[Text, Any] = dict(inputs_from_previous_nodes)
+        except TypeError:
+            import ipdb; ipdb.set_trace()
+            pass
 
         kwargs = {}
         for input_name, input_node in self._inputs.items():

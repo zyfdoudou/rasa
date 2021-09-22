@@ -15,6 +15,10 @@ from sanic.response import StreamingHTTPResponse
 import rasa.core
 from rasa.engine.storage.storage import ModelMetadata
 from rasa.exceptions import ModelNotFound
+from rasa.shared.core.events import (
+    ActionExecuted, BotUttered, DefinePrevUserUtteredFeaturization,
+    SessionStarted, UserUtteranceReverted, UserUttered,
+)
 import rasa.shared.utils.common
 from rasa.core.policies.rule_policy import RulePolicy
 import rasa.utils.io
@@ -172,9 +176,7 @@ async def test_load_agent(trained_rasa_model: Text):
 
 
 # TODO: JUZL: handle_message with nlu only model
-async def test_agent_handle_message_with_nlu_only_model(
-    trained_nlu_model: Text, monkeypatch: MonkeyPatch
-):
+async def test_agent_handle_message_with_nlu_only_model(trained_nlu_model: Text):
     agent = await load_agent(model_path=trained_nlu_model)
     assert agent.domain is not None
     sender_id = "test_sender_id"
@@ -204,3 +206,51 @@ async def test_load_agent_on_not_existing_path():
 async def test_agent_load_on_invalid_model_path(model_path: Optional[Text]):
     with pytest.raises(ModelNotFound):
         Agent.load(model_path)
+
+
+# TODO: JUZL: handle_message with nlu only model
+async def test_agent_handle_message_normal(trained_rasa_model: Text):
+    agent = await load_agent(model_path=trained_rasa_model)
+    sender_id = "test_sender_id"
+    message = UserMessage("hello", sender_id=sender_id)
+    await agent.handle_message(message)
+    tracker = agent.tracker_store.get_or_create_tracker(sender_id)
+    expected_events = [
+        ActionExecuted(action_name="action_session_start"),
+        SessionStarted(),
+        ActionExecuted(action_name="action_listen"),
+        UserUttered(),
+        DefinePrevUserUtteredFeaturization(False),
+        ActionExecuted(action_name="action_default_fallback"),
+        BotUttered("sorry, I didn't get that, can you rephrase it?"),
+        UserUtteranceReverted(),
+        ActionExecuted(action_name="action_listen"),
+    ]
+
+    for e1, e2 in zip(tracker.events, expected_events):
+        assert e1.__class__ == e2.__class__
+
+
+
+# TODO: JUZL: handle_message with nlu only model
+async def test_agent_handle_message_only_nlu(trained_nlu_model: Text):
+    agent = await load_agent(model_path=trained_nlu_model)
+    sender_id = "test_sender_id"
+    message = UserMessage("hello", sender_id=sender_id)
+    await agent.handle_message(message)
+    tracker = agent.tracker_store.get_or_create_tracker(sender_id)
+    expected_events = [
+        ActionExecuted(action_name="action_session_start"),
+        SessionStarted(),
+        ActionExecuted(action_name="action_listen"),
+        UserUttered(),
+        DefinePrevUserUtteredFeaturization(False),
+        ActionExecuted(action_name="action_default_fallback"),
+        BotUttered("sorry, I didn't get that, can you rephrase it?"),
+        UserUtteranceReverted(),
+        ActionExecuted(action_name="action_listen"),
+    ]
+
+    for e1, e2 in zip(tracker.events, expected_events):
+        assert e1.__class__ == e2.__class__
+
