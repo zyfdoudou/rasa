@@ -185,7 +185,7 @@ async def _trained_default_agent(
       - name: WhitespaceTokenizer
       - name: CountVectorsFeaturizer
       - name: DIETClassifier
-        epochs: 1
+        epochs: 10
     policies:
     - name: AugmentedMemoizationPolicy
       max_history: 3

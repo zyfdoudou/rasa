@@ -396,7 +396,6 @@ class GraphNode:
         try:
             received_inputs: Dict[Text, Any] = dict(inputs_from_previous_nodes)
         except TypeError:
-            import ipdb; ipdb.set_trace()
             pass
 
         kwargs = {}

@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, Dict, Text, List, Callable, Optional
 from unittest import mock
 from unittest.mock import Mock
+import uuid
 
 import pytest
 from _pytest.logging import LogCaptureFixture
@@ -208,34 +209,30 @@ async def test_agent_load_on_invalid_model_path(model_path: Optional[Text]):
         Agent.load(model_path)
 
 
-# TODO: JUZL: handle_message with nlu only model
-async def test_agent_handle_message_normal(trained_rasa_model: Text):
-    agent = await load_agent(model_path=trained_rasa_model)
-    sender_id = "test_sender_id"
+async def test_agent_handle_message_2_normal(default_agent: Agent):
+    sender_id = uuid.uuid4().hex
     message = UserMessage("hello", sender_id=sender_id)
-    await agent.handle_message(message)
-    tracker = agent.tracker_store.get_or_create_tracker(sender_id)
+    await default_agent.handle_message(message)
+    tracker = default_agent.tracker_store.get_or_create_tracker(sender_id)
     expected_events = [
         ActionExecuted(action_name="action_session_start"),
         SessionStarted(),
         ActionExecuted(action_name="action_listen"),
         UserUttered(),
         DefinePrevUserUtteredFeaturization(False),
-        ActionExecuted(action_name="action_default_fallback"),
-        BotUttered("sorry, I didn't get that, can you rephrase it?"),
-        UserUtteranceReverted(),
+        ActionExecuted(action_name="utter_greet"),  # TODO: JUZL: why?
+        BotUttered('hey there None!'),
         ActionExecuted(action_name="action_listen"),
     ]
-
+    assert len(tracker.events) == len(expected_events)
     for e1, e2 in zip(tracker.events, expected_events):
         assert e1.__class__ == e2.__class__
 
 
 
-# TODO: JUZL: handle_message with nlu only model
-async def test_agent_handle_message_only_nlu(trained_nlu_model: Text):
+async def test_agent_handle_message_2_only_nlu(trained_nlu_model: Text):
     agent = await load_agent(model_path=trained_nlu_model)
-    sender_id = "test_sender_id"
+    sender_id = uuid.uuid4().hex
     message = UserMessage("hello", sender_id=sender_id)
     await agent.handle_message(message)
     tracker = agent.tracker_store.get_or_create_tracker(sender_id)
@@ -244,13 +241,30 @@ async def test_agent_handle_message_only_nlu(trained_nlu_model: Text):
         SessionStarted(),
         ActionExecuted(action_name="action_listen"),
         UserUttered(),
+    ]
+    assert len(tracker.events) == len(expected_events)
+    for e1, e2 in zip(tracker.events, expected_events):
+        assert e1.__class__ == e2.__class__  # TODO: JUZL: assert more than class
+
+
+async def test_agent_handle_message_2_only_core(trained_core_model: Text):
+    agent = await load_agent(model_path=trained_core_model)
+    sender_id = uuid.uuid4().hex
+    message = UserMessage("/greet", sender_id=sender_id)
+    await agent.handle_message(message)
+    tracker = agent.tracker_store.get_or_create_tracker(sender_id)
+    expected_events = [
+        ActionExecuted(action_name="action_session_start"),
+        SessionStarted(),
+        ActionExecuted(action_name="action_listen"),
+        UserUttered(),
         DefinePrevUserUtteredFeaturization(False),
-        ActionExecuted(action_name="action_default_fallback"),
-        BotUttered("sorry, I didn't get that, can you rephrase it?"),
-        UserUtteranceReverted(),
+        ActionExecuted(action_name="utter_greet"),
+        BotUttered(),
         ActionExecuted(action_name="action_listen"),
     ]
-
+    import ipdb; ipdb.set_trace()
+    assert len(tracker.events) == len(expected_events)
     for e1, e2 in zip(tracker.events, expected_events):
-        assert e1.__class__ == e2.__class__
+        assert e1.__class__ == e2.__class__  # TODO: JUZL: assert more than class
 

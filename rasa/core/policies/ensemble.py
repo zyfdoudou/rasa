@@ -1,6 +1,6 @@
 from __future__ import annotations
 from abc import abstractmethod, ABC
-from typing import Optional, Text, List, Dict, Any
+from typing import Optional, Text, List, Dict, Any, Tuple
 import logging
 
 from rasa.engine.graph import GraphComponent
@@ -288,7 +288,7 @@ class DefaultPolicyPredictionEnsemble(PolicyPredictionEnsemble, GraphComponent):
         predictions: List[PolicyPrediction],
         tracker: DialogueStateTracker,
         domain: Domain,
-    ) -> PolicyPrediction:
+    ) -> Tuple[DialogueStateTracker, PolicyPrediction]:  # TODO: JUZL: test
         """Derives a single prediction from the given list of predictions.
 
         Note that you might get unexpected results if the priorities are non-unique.
@@ -332,4 +332,4 @@ class DefaultPolicyPredictionEnsemble(PolicyPredictionEnsemble, GraphComponent):
                 )
 
         logger.debug(f"Predicted next action using {winning_prediction.policy_name}.")
-        return winning_prediction
+        return tracker, winning_prediction

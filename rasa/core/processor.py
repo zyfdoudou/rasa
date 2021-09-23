@@ -94,12 +94,11 @@ class MessageProcessor:
         """Handle a single message with this processor."""
 
         # TODO: JUZL: Handle message preprocessing?
-
         tracker = await self.fetch_tracker_and_update_session(
             message.sender_id, message.output_channel, message.metadata
         )
 
-        tracker = await self._predict_and_execute_next_action(
+        tracker = await self._run_prediction_loop(
             message.output_channel, tracker, message
         )
 
@@ -376,14 +375,16 @@ class MessageProcessor:
 
         tracker, prediction = self._get_next_action_probabilities(tracker, message)
 
-        action = rasa.core.actions.action.action_for_index(
-            prediction.max_confidence_index, self.domain, self.action_endpoint
-        )
+        action = None
+        if prediction:
+            action = rasa.core.actions.action.action_for_index(
+                prediction.max_confidence_index, self.domain, self.action_endpoint
+            )
 
-        logger.debug(
-            f"Predicted next action '{action.name()}' with confidence "
-            f"{prediction.max_confidence:.2f}."
-        )
+            logger.debug(
+                f"Predicted next action '{action.name()}' with confidence "
+                f"{prediction.max_confidence:.2f}."
+            )
 
         return tracker, action, prediction
 
@@ -488,7 +489,7 @@ class MessageProcessor:
             UserUttered.create_external(intent_name, entity_list, input_channel),
             self.domain,
         )
-        await self._predict_and_execute_next_action(output_channel, tracker)
+        await self._run_prediction_loop(output_channel, tracker)
         # save tracker state to continue conversation from this state
         self._save_tracker(tracker)
 
@@ -646,7 +647,7 @@ class MessageProcessor:
             and should_predict_another_action
         )
 
-    async def _predict_and_execute_next_action(
+    async def _run_prediction_loop(
         self,
         output_channel: OutputChannel,
         tracker: DialogueStateTracker,
@@ -670,9 +671,12 @@ class MessageProcessor:
                     self.on_circuit_break(tracker, message.output_channel, self.nlg)
                 break
 
-            should_predict_another_action = await self._run_action(
-                action, tracker, output_channel, self.nlg, prediction
-            )
+            if action:
+                should_predict_another_action = await self._run_action(
+                    action, tracker, output_channel, self.nlg, prediction
+                )
+            else:
+                break
 
         return tracker
 

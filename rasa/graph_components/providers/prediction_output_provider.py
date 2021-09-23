@@ -18,6 +18,7 @@ from rasa.shared.core.domain import Domain
 logger = logging.getLogger(__name__)
 
 
+# TODO: JUZL: test
 class PredictionOutputProvider(GraphComponent):
     """Provides the a unified output for model predictions."""
 
@@ -41,7 +42,14 @@ class PredictionOutputProvider(GraphComponent):
         """
         parsed_messages: List[Message] = kwargs.get("parsed_messages")
         parsed_message = parsed_messages[0] if parsed_messages else None
-        tracker_with_added_message: DialogueStateTracker = kwargs.get("tracker_with_added_message")
-        policy_prediction: PolicyPrediction = kwargs.get("policy_prediction")
-        return parsed_message, tracker_with_added_message, policy_prediction
+
+        tracker: DialogueStateTracker = kwargs.get("tracker_with_added_message")
+
+        ensemble_output: Tuple[DialogueStateTracker, PolicyPrediction] = kwargs.get("ensemble_output")
+        policy_prediction = None
+        if ensemble_output:
+            tracker, policy_prediction = ensemble_output
+
+
+        return parsed_message, tracker, policy_prediction
 

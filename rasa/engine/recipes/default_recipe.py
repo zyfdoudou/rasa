@@ -654,7 +654,7 @@ class DefaultV1Recipe(Recipe):
             self._add_core_predict_nodes(
                 predict_config, predict_nodes, train_nodes, preprocessors,
             )
-            output_provider_needs["policy_prediction"] = "select_prediction"
+            output_provider_needs["ensemble_output"] = "select_prediction"
 
         predict_nodes["output_provider"] = SchemaNode(
             needs=output_provider_needs,
@@ -737,6 +737,7 @@ class DefaultV1Recipe(Recipe):
             RegexMessageHandlerGraphComponent,
         )
 
+        # TODO: JUZL: always add these to the graph.
         regex_handler_node_name = f"run_{RegexMessageHandlerGraphComponent.__name__}"
 
         domain_needs = {}
@@ -753,8 +754,6 @@ class DefaultV1Recipe(Recipe):
 
         predict_nodes["nlu_prediction_to_history_adder"] = SchemaNode(
             **default_predict_kwargs,
-            # TODO: I think there is a bug in our Dask Runner for this case as
-            # the input will override `messages`
             needs={
                 "predictions": regex_handler_node_name,
                 "original_messages": "__message__",
