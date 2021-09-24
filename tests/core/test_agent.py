@@ -268,3 +268,25 @@ async def test_agent_handle_message_2_only_core(trained_core_model: Text):
     for e1, e2 in zip(tracker.events, expected_events):
         assert e1.__class__ == e2.__class__  # TODO: JUZL: assert more than class
 
+
+async def test_agent_handle_message_2_only_core_no_message(trained_core_model: Text):
+    agent = await load_agent(model_path=trained_core_model)
+    sender_id = uuid.uuid4().hex
+    message = UserMessage("/greet", sender_id=sender_id)
+    await agent.handle_message(message)
+    tracker = agent.tracker_store.get_or_create_tracker(sender_id)
+    expected_events = [
+        ActionExecuted(action_name="action_session_start"),
+        SessionStarted(),
+        ActionExecuted(action_name="action_listen"),
+        UserUttered(),
+        DefinePrevUserUtteredFeaturization(False),
+        ActionExecuted(action_name="utter_greet"),
+        BotUttered(),
+        ActionExecuted(action_name="action_listen"),
+    ]
+    import ipdb; ipdb.set_trace()
+    assert len(tracker.events) == len(expected_events)
+    for e1, e2 in zip(tracker.events, expected_events):
+        assert e1.__class__ == e2.__class__  # TODO: JUZL: assert more than class
+

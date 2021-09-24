@@ -640,15 +640,57 @@ class DefaultV1Recipe(Recipe):
         predict_config = copy.deepcopy(config)
         predict_nodes = {}
 
-        output_provider_needs = {}
+        from rasa.nlu.classifiers.regex_message_handler import (
+            RegexMessageHandlerGraphComponent,
+        )
+
+        predict_nodes["nlu_message_converter"] = SchemaNode(
+            **default_predict_kwargs,
+            # TODO
+            needs={"messages": "__message__"},
+            uses=NLUMessageConverter,
+            fn="convert_user_message",
+            config={},
+        )
+
+        last_run_nlu_node = "nlu_message_converter"
+
+
         if self._use_nlu:
-            last_run_nlu_node = self._add_nlu_predict_nodes(
+            last_run_nlu_node = self._add_nlu_predict_nodes(last_run_nlu_node,
                 predict_config, predict_nodes, train_nodes
             )
-            output_provider_needs["parsed_messages"] = last_run_nlu_node
-            output_provider_needs[
-                "tracker_with_added_message"
-            ] = "nlu_prediction_to_history_adder"
+
+        domain_needs = {}
+        if self._use_core:  # TODO: JUZL: is this right?
+            domain_needs["domain"] = "domain_provider"
+
+        regex_handler_node_name = f"run_{RegexMessageHandlerGraphComponent.__name__}"
+        predict_nodes[regex_handler_node_name] = SchemaNode(
+            **default_predict_kwargs,
+            needs={"messages": last_run_nlu_node, **domain_needs},
+            uses=RegexMessageHandlerGraphComponent,
+            fn="process",
+            config={},
+        )
+
+        predict_nodes["`nlu_prediction_to_history_adder`"] = SchemaNode(
+            **default_predict_kwargs,
+            needs={
+                "predictions": regex_handler_node_name,
+                "original_messages": "__message__",
+                "tracker": "__tracker__",
+                **domain_needs,
+            },
+            uses=NLUPredictionToHistoryAdder,
+            fn="add",
+            config={},
+        )
+
+        output_provider_needs = {
+            "parsed_messages": regex_handler_node_name,
+            "tracker_with_added_message": "nlu_prediction_to_history_adder",
+        }
 
         if self._use_core:
             self._add_core_predict_nodes(
@@ -668,21 +710,11 @@ class DefaultV1Recipe(Recipe):
 
     def _add_nlu_predict_nodes(
         self,
+        last_run_node: Text,
         predict_config: Dict[Text, Any],
         predict_nodes: Dict[Text, SchemaNode],
         train_nodes: Dict[Text, SchemaNode],
     ) -> Text:
-        predict_nodes["nlu_message_converter"] = SchemaNode(
-            **default_predict_kwargs,
-            # TODO
-            needs={"messages": "__message__"},
-            uses=NLUMessageConverter,
-            fn="convert_user_message",
-            config={},
-        )
-
-        last_run_node = "nlu_message_converter"
-
         for idx, item in enumerate(predict_config["pipeline"]):
             component_name = item.pop("name")
             component = self._from_registry(component_name)
@@ -733,39 +765,8 @@ class DefaultV1Recipe(Recipe):
                         predict_nodes, new_node, component_name, last_run_node
                     )
 
-        from rasa.nlu.classifiers.regex_message_handler import (
-            RegexMessageHandlerGraphComponent,
-        )
 
-        # TODO: JUZL: always add these to the graph.
-        regex_handler_node_name = f"run_{RegexMessageHandlerGraphComponent.__name__}"
-
-        domain_needs = {}
-        if self._use_core:
-            domain_needs["domain"] = "domain_provider"
-
-        predict_nodes[regex_handler_node_name] = SchemaNode(
-            **default_predict_kwargs,
-            needs={"messages": last_run_node, **domain_needs},
-            uses=RegexMessageHandlerGraphComponent,
-            fn="process",
-            config={},
-        )
-
-        predict_nodes["nlu_prediction_to_history_adder"] = SchemaNode(
-            **default_predict_kwargs,
-            needs={
-                "predictions": regex_handler_node_name,
-                "original_messages": "__message__",
-                "tracker": "__tracker__",
-                **domain_needs,
-            },
-            uses=NLUPredictionToHistoryAdder,
-            fn="add",
-            config={},
-        )
-
-        return regex_handler_node_name
+        return last_run_node
 
     def _add_nlu_predict_node_from_train(
         self,
@@ -864,9 +865,7 @@ class DefaultV1Recipe(Recipe):
                         and node_with_e2e_features
                         else {}
                     ),
-                    "tracker": "nlu_prediction_to_history_adder"
-                    if self._use_nlu
-                    else "__tracker__",
+                    "tracker": "nlu_prediction_to_history_adder",
                     "rule_only_data": rule_only_data_provider_name,
                 },
                 fn="predict_action_probabilities",

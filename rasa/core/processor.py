@@ -306,6 +306,7 @@ class MessageProcessor:
             message.sender_id, message.output_channel, message.metadata
         )
 
+        # TODO: JUZL: should this use parse_message?
         await self._handle_message_with_tracker(message, tracker)
 
         if should_save_tracker:
