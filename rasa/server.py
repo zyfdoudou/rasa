@@ -476,31 +476,13 @@ async def _load_agent(
     model_server: Optional[EndpointConfig] = None,
     remote_storage: Optional[Text] = None,
     endpoints: Optional[AvailableEndpoints] = None,
-    lock_store: Optional[LockStore] = None,
 ) -> Agent:
     try:
-        tracker_store = None
-        generator = None
-        action_endpoint = None
-
-        if endpoints:
-            broker = await EventBroker.create(endpoints.event_broker)
-            tracker_store = TrackerStore.create(
-                endpoints.tracker_store, event_broker=broker
-            )
-            generator = endpoints.nlg
-            action_endpoint = endpoints.action
-            if not lock_store:
-                lock_store = LockStore.create(endpoints.lock_store)
-
         loaded_agent = await rasa.core.agent.load_agent(
-            model_path,
-            model_server,
-            remote_storage,
-            generator=generator,
-            tracker_store=tracker_store,
-            lock_store=lock_store,
-            action_endpoint=action_endpoint,
+            model_path=model_path,
+            model_server=model_server,
+            remote_storage=remote_storage,
+            endpoints=endpoints,
         )
     except Exception as e:
         logger.debug(traceback.format_exc())
@@ -992,7 +974,7 @@ def create_app(
     async def predict(request: Request, conversation_id: Text) -> HTTPResponse:
         try:
             # Fetches the appropriate bot response in a json format
-            responses = await app.agent.predict_next(conversation_id)
+            responses = await app.agent.predict_next_for_sender_id(conversation_id)
             responses["scores"] = sorted(
                 responses["scores"], key=lambda k: (-k["score"], k["action"])
             )
@@ -1204,7 +1186,9 @@ def create_app(
                 # a job to pull the model from the server
                 model_server.kwargs["wait_time_between_pulls"] = 0
             eval_agent = await _load_agent(
-                model_path, model_server, app.agent.remote_storage
+                model_path=model_path,
+                model_server=model_server,
+                remote_storage=app.agent.remote_storage,
             )
 
         data_path = os.path.abspath(test_data_file)
@@ -1293,9 +1277,7 @@ def create_app(
             )
 
         try:
-            result = app.agent.create_processor().predict_next_with_tracker(
-                tracker, verbosity
-            )
+            result = app.agent.predict_next_with_tracker(tracker, verbosity)
 
             return response.json(result)
         except Exception as e:
@@ -1321,9 +1303,7 @@ def create_app(
         try:
             data = emulator.normalise_request_json(request.json)
             try:
-                parsed_data = await app.agent.parse_message(
-                    data.get("text")
-                )
+                parsed_data = await app.agent.parse_message(data.get("text"))
             except Exception as e:
                 logger.debug(traceback.format_exc())
                 raise ErrorResponse(
@@ -1364,9 +1344,14 @@ def create_app(
                     {"parameter": "model_server", "in": "body"},
                 )
 
-        app.agent = await _load_agent(
-            model_path, model_server, remote_storage, endpoints, app.agent.lock_store
+        new_agent = await _load_agent(
+            model_path=model_path,
+            model_server=model_server,
+            remote_storage=remote_storage,
+            endpoints=endpoints,
         )
+        new_agent.lock_store = app.agent.lock_store
+        app.agent = new_agent
 
         logger.debug(f"Successfully loaded model '{model_path}'.")
         return response.json(None, status=HTTPStatus.NO_CONTENT)

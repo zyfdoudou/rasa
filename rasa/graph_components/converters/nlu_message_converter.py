@@ -38,7 +38,7 @@ class NLUMessageConverter(GraphComponent):
                     "message_id": message.message_id,
                     "metadata": message.metadata,
                 },
-                output_properties={TEXT_TOKENS}  # TODO: JUZL: Test this
+                output_properties={TEXT_TOKENS},  # TODO: JUZL: Test this
             )
             for message in messages
         ]

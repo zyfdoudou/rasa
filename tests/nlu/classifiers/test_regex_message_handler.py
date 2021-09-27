@@ -276,8 +276,11 @@ def test_process_does_not_do_anything(
 
     assert parsed_messages[0] == message
 
+
 # TODO: JUZL: remove
-async def test_against_interpreter(regex_message_handler: RegexMessageHandlerGraphComponent):
+async def test_against_interpreter(
+    regex_message_handler: RegexMessageHandlerGraphComponent,
+):
     import json
 
     from rasa.shared.nlu.interpreter import RegexInterpreter
@@ -287,9 +290,7 @@ async def test_against_interpreter(regex_message_handler: RegexMessageHandlerGra
     text = f"/greet{json.dumps(slot_1)}"
     data = await RegexInterpreter().parse(text)
 
-    message = Message(
-        data={TEXT: text},
-    )
+    message = Message(data={TEXT: text},)
 
     # construct domain from expected intent/entities
     domain = Domain(
@@ -304,7 +305,3 @@ async def test_against_interpreter(regex_message_handler: RegexMessageHandlerGra
     message = regex_message_handler.process([message], domain)[0]
 
     assert message.data == data
-
-
-
-

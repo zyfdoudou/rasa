@@ -64,7 +64,7 @@ def test_model_is_compatible(metadata):
 def test_create_interpreter(parameters, trained_nlu_model):
     obj = parameters["obj"]
     # if obj == "trained_nlu_model":
-        # _, obj = get_model_subdirectories(get_model(trained_nlu_model))
+    # _, obj = get_model_subdirectories(get_model(trained_nlu_model))
 
     interpreter = rasa.core.interpreter.create_interpreter(
         parameters["endpoint"] or obj

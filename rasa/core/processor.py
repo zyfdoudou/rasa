@@ -57,7 +57,10 @@ from rasa.core.policies.ensemble import PolicyEnsemble
 import rasa.core.tracker_store
 import rasa.shared.core.trackers
 from rasa.shared.core.trackers import DialogueStateTracker, EventVerbosity
-from rasa.shared.nlu.constants import INTENT_NAME_KEY
+from rasa.shared.nlu.constants import (
+    ENTITIES, INTENT, INTENT_NAME_KEY, PREDICTED_CONFIDENCE_KEY,
+    TEXT,
+)
 from rasa.utils.endpoints import EndpointConfig
 
 logger = logging.getLogger(__name__)
@@ -75,7 +78,6 @@ class MessageProcessor:
         generator: NaturalLanguageGenerator,
         action_endpoint: Optional[EndpointConfig] = None,
         max_number_of_predictions: int = MAX_NUMBER_OF_PREDICTIONS,
-        message_preprocessor: Optional[LambdaType] = None,
         on_circuit_break: Optional[LambdaType] = None,
     ) -> None:
         self.graph_runner = graph_runner
@@ -84,7 +86,6 @@ class MessageProcessor:
         self.tracker_store = tracker_store
         self.lock_store = lock_store
         self.max_number_of_predictions = max_number_of_predictions
-        self.message_preprocessor = message_preprocessor
         self.on_circuit_break = on_circuit_break
         self.action_endpoint = action_endpoint
 
@@ -92,8 +93,6 @@ class MessageProcessor:
         self, message: UserMessage
     ) -> Optional[List[Dict[Text, Any]]]:
         """Handle a single message with this processor."""
-
-        # TODO: JUZL: Handle message preprocessing?
         tracker = await self.fetch_tracker_and_update_session(
             message.sender_id, message.output_channel, message.metadata
         )
@@ -104,14 +103,15 @@ class MessageProcessor:
 
         self._save_tracker(tracker)
 
-        # TODO: JUZL: do we need this?
         if isinstance(message.output_channel, CollectingOutputChannel):
             return message.output_channel.messages
 
         return None
 
-    async def predict_next(self, sender_id: Text) -> Optional[Dict[Text, Any]]:
-        """Predict the next action for the current conversation state.
+    async def predict_next_for_sender_id(
+        self, sender_id: Text
+    ) -> Optional[Dict[Text, Any]]:
+        """Predict the next action for the given sender_id.
 
         Args:
             sender_id: Conversation ID.
@@ -141,7 +141,10 @@ class MessageProcessor:
         Returns:
             The prediction for the next action. `None` if no domain or policies loaded.
         """
-        tracker, prediction = self._get_next_action_probabilities(tracker, None)
+        tracker, prediction = self._predict_next_with_tracker(tracker, None)
+
+        if not prediction:
+            return None
 
         scores = [
             {"action": a, "score": p}
@@ -306,8 +309,7 @@ class MessageProcessor:
             message.sender_id, message.output_channel, message.metadata
         )
 
-        # TODO: JUZL: should this use parse_message?
-        await self._handle_message_with_tracker(message, tracker)
+        self._handle_message_with_tracker(message, tracker)
 
         if should_save_tracker:
             self._save_tracker(tracker)
@@ -338,7 +340,6 @@ class MessageProcessor:
         Returns:
             The new conversation state. Note that the new state is also persisted.
         """
-        # TODO: JUZL:
         # we have a Tracker instance for each user
         # which maintains conversation state
         tracker = await self.fetch_tracker_and_update_session(sender_id, output_channel)
@@ -351,7 +352,7 @@ class MessageProcessor:
 
         return tracker
 
-    def predict_next_action(
+    def predict_next_with_tracker_if_should(
         self, tracker: DialogueStateTracker, message: Optional[UserMessage] = None
     ) -> Tuple[DialogueStateTracker, rasa.core.actions.action.Action, PolicyPrediction]:
         """Predicts the next action the bot should take after seeing x.
@@ -374,7 +375,7 @@ class MessageProcessor:
                 "The limit of actions to predict has been reached."
             )
 
-        tracker, prediction = self._get_next_action_probabilities(tracker, message)
+        tracker, prediction = self._predict_next_with_tracker(tracker, message)
 
         action = None
         if prediction:
@@ -464,7 +465,6 @@ class MessageProcessor:
             tracker: The tracker to which the event should be added.
             output_channel: The output channel.
         """
-        # TODO: JUZL:
         if isinstance(entities, list):
             entity_list = entities
         elif isinstance(entities, dict):
@@ -544,33 +544,29 @@ class MessageProcessor:
             action_name, self.domain, self.action_endpoint
         )
 
-    # TODO: JUZL: I think we can remove tracker...
-    async def parse_message(
-        self, message: UserMessage, tracker: Optional[DialogueStateTracker] = None
-    ) -> Dict[Text, Any]:
+    def parse_message(self, message: UserMessage) -> Dict[Text, Any]:
         """Interpret the passed message.
 
         Arguments:
             message: Message to handle
-            tracker: Dialogue context of the message
 
         Returns:
             Parsed data extracted from the message.
         """
-        # TODO: JUZL:
-        # preprocess message if necessary
-
-        # TODO: JUZL: dedupe
         results = self.graph_runner.run(
             inputs={
                 "__message__": [message] if message else [],
-                "__tracker__": tracker,
+                "__tracker__": DialogueStateTracker("no_sender", []),
             },
-            targets=["run_RegexMessageHandlerGraphComponent"],
+            targets=["output_provider"],
         )
-        # TODO: JUZL:
         parsed_message, _, _ = results["output_provider"]
-        parse_data = parsed_message.as_dict(only_output_properties=True)
+        parse_data = {
+            TEXT: "",
+            INTENT: {INTENT_NAME_KEY: None, PREDICTED_CONFIDENCE_KEY: 0.0},
+            ENTITIES: [],
+        }
+        parse_data.update(parsed_message.as_dict(only_output_properties=True))
 
         logger.debug(
             "Received user message '{}' with intent '{}' "
@@ -583,14 +579,14 @@ class MessageProcessor:
 
         return parse_data
 
-    async def _handle_message_with_tracker(
+    def _handle_message_with_tracker(
         self, message: UserMessage, tracker: DialogueStateTracker
     ) -> None:
 
         if message.parse_data:
             parse_data = message.parse_data
         else:
-            parse_data = await self.parse_message(message, tracker)
+            parse_data = self.parse_message(message)
 
         # don't ever directly mutate the tracker
         # - instead pass its events to log
@@ -660,7 +656,9 @@ class MessageProcessor:
         while should_predict_another_action and self._should_handle_message(tracker):
             # this actually just calls the policy's method by the same name
             try:
-                tracker, action, prediction = self.predict_next_action(tracker, message)
+                tracker, action, prediction = self.predict_next_with_tracker_if_should(
+                    tracker, message
+                )
                 message = None
             except ActionLimitReached:
                 logger.warning(
@@ -807,42 +805,6 @@ class MessageProcessor:
 
         return self.should_predict_another_action(action.name())
 
-    def _warn_about_new_slots(
-        self, tracker: DialogueStateTracker, action_name: Text, events: List[Event]
-    ) -> None:
-        # TODO: JUZL:
-        # these are the events from that action we have seen during training
-
-        if (
-            not self.policy_ensemble
-            or action_name not in self.policy_ensemble.action_fingerprints
-        ):
-            return
-
-        fingerprint = self.policy_ensemble.action_fingerprints[action_name]
-        slots_seen_during_train = fingerprint.get(SLOTS, set())
-        for e in events:
-            if isinstance(e, SlotSet) and e.key not in slots_seen_during_train:
-                s: Optional[Slot] = tracker.slots.get(e.key)
-                if s and s.has_features():
-                    if e.key == REQUESTED_SLOT and tracker.active_loop:
-                        pass
-                    else:
-                        rasa.shared.utils.io.raise_warning(
-                            f"Action '{action_name}' set slot type '{s.type_name}' "
-                            f"which it never set during the training. This "
-                            f"can throw off the prediction. Make sure to "
-                            f"include training examples in your stories "
-                            f"for the different types of slots this "
-                            f"action can return. Remember: you need to "
-                            f"set the slots manually in the stories by "
-                            f"adding the following lines after the action:\n\n"
-                            f"- {KEY_ACTION}: {action_name}\n"
-                            f"- {KEY_SLOT_NAME}:\n"
-                            f"  - {e.key}: {e.value}\n",
-                            docs=DOCS_URL_SLOTS,
-                        )
-
     def _log_action_on_tracker(
         self,
         tracker: DialogueStateTracker,
@@ -855,8 +817,6 @@ class MessageProcessor:
         # returns `None` for some other reason.
         if events is None:
             events = []
-
-        # self._warn_about_new_slots(tracker, action.name(), events)
 
         action_was_rejected_manually = any(
             isinstance(event, ActionExecutionRejected) for event in events
@@ -909,8 +869,7 @@ class MessageProcessor:
     def _save_tracker(self, tracker: DialogueStateTracker) -> None:
         self.tracker_store.save(tracker)
 
-    # TODO: JUZL: rename this
-    def _get_next_action_probabilities(
+    def _predict_next_with_tracker(
         self, tracker: DialogueStateTracker, message: Optional[UserMessage] = None
     ) -> Tuple[DialogueStateTracker, PolicyPrediction]:
         """Collect predictions from ensemble and return action and predictions."""
@@ -929,13 +888,12 @@ class MessageProcessor:
                 "and predict the next action."
             )
 
-        targets = ["output_provider"]
         results = self.graph_runner.run(
             inputs={
                 "__message__": [message] if message else [],
                 "__tracker__": tracker,
             },
-            targets=targets,
+            targets=["output_provider"],
         )
         parsed_message, tracker_with_added_message, policy_prediction = results.get(
             "output_provider"

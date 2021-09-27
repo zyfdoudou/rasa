@@ -604,7 +604,9 @@ def _run_action_prediction(
     partial_tracker: DialogueStateTracker,
     expected_action: Text,
 ) -> Tuple[Text, PolicyPrediction, Optional[EntityEvaluationResult]]:
-    action, prediction = processor.predict_next_action(partial_tracker)
+    tracker, action, prediction = processor.predict_next_with_tracker_if_should(
+        partial_tracker
+    )
     predicted_action = action.name()
 
     policy_entity_result = _get_e2e_entity_evaluation_result(
@@ -622,7 +624,9 @@ def _run_action_prediction(
         # but it might be Ok if form action is rejected.
         emulate_loop_rejection(partial_tracker)
         # try again
-        action, prediction = processor.predict_next_action(partial_tracker)
+        tracker, action, prediction = processor.predict_next_with_tracker_if_should(
+            partial_tracker
+        )
 
         # Even if the prediction is also wrong, we don't have to undo the emulation
         # of the action rejection as we know that the user explicitly specified

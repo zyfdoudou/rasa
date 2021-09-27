@@ -2,7 +2,15 @@
 # https://rasa.com/docs/rasa/components
 language: en
 pipeline:
+  - name: WhitespaceTokenizer
+  - name: CountVectorsFeaturizer
+  - name: CountVectorsFeaturizer
+    analyzer: "char_wb"
+    min_ngram: 1
+    max_ngram: 4
   - name: KeywordIntentClassifier
+  - name: DIETClassifier
+    epochs: 10
   - name: RegexEntityExtractor
 
 # Configuration for Rasa Core.

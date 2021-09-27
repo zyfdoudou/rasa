@@ -45,11 +45,14 @@ class PredictionOutputProvider(GraphComponent):
 
         tracker: DialogueStateTracker = kwargs.get("tracker_with_added_message")
 
-        ensemble_output: Tuple[DialogueStateTracker, PolicyPrediction] = kwargs.get("ensemble_output")
+        ensemble_output: Tuple[DialogueStateTracker, PolicyPrediction] = kwargs.get(
+            "ensemble_output"
+        )
         policy_prediction = None
         if ensemble_output:
-            tracker, policy_prediction = ensemble_output
-
+            try:
+                tracker, policy_prediction = ensemble_output
+            except Exception:
+                import ipdb; ipdb.set_trace()
 
         return parsed_message, tracker, policy_prediction
-

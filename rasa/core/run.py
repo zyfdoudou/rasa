@@ -238,29 +238,11 @@ async def load_agent_on_start(
     Used to be scheduled on server start
     (hence the `app` and `loop` arguments).
     """
-    # noinspection PyBroadException
-    # try:
-    #     with model.get_model(model_path) as unpacked_model:
-    #         _, nlu_model = model.get_model_subdirectories(unpacked_model)
-    #         _interpreter = rasa.core.interpreter.create_interpreter(
-    #             endpoints.nlu or nlu_model
-    #         )
-    # except Exception:
-    #     logger.debug(f"Could not load interpreter from '{model_path}'.")
-    #     _interpreter = None
-
-    _broker = await EventBroker.create(endpoints.event_broker, loop=loop)
-    _tracker_store = TrackerStore.create(endpoints.tracker_store, event_broker=_broker)
-    _lock_store = LockStore.create(endpoints.lock_store)
-
-    model_server = endpoints.model if endpoints and endpoints.model else None
-
     try:
         app.agent = await agent.load_agent(
-            model_path,
-            model_server=model_server,
+            model_path=model_path,
             remote_storage=remote_storage,
-            endpoints=endpoints
+            endpoints=endpoints,
         )
     except Exception as e:
         rasa.shared.utils.io.raise_warning(
@@ -270,20 +252,10 @@ async def load_agent_on_start(
         app.agent = None
 
     if not app.agent:
-        # TODO: JUZL: Do we want this?
-        rasa.shared.utils.io.raise_warning(
+        raise RasaException(
             "Agent could not be loaded with the provided configuration. "
             "Load default agent without any model."
         )
-        app.agent = Agent(
-            # interpreter=_interpreter,
-            generator=endpoints.nlg,
-            tracker_store=_tracker_store,
-            action_endpoint=endpoints.action,
-            model_server=model_server,
-            remote_storage=remote_storage,
-        )
-
     logger.info("Rasa server is up and running.")
     return app.agent
 

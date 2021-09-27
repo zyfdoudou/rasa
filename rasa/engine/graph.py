@@ -395,8 +395,10 @@ class GraphNode:
         """
         try:
             received_inputs: Dict[Text, Any] = dict(inputs_from_previous_nodes)
-        except TypeError:
-            pass
+        except Exception:
+            import ipdb
+
+            ipdb.set_trace()
 
         kwargs = {}
         for input_name, input_node in self._inputs.items():

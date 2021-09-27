@@ -655,16 +655,17 @@ class DefaultV1Recipe(Recipe):
 
         last_run_nlu_node = "nlu_message_converter"
 
-
         if self._use_nlu:
-            last_run_nlu_node = self._add_nlu_predict_nodes(last_run_nlu_node,
-                predict_config, predict_nodes, train_nodes
+            last_run_nlu_node = self._add_nlu_predict_nodes(
+                last_run_nlu_node, predict_config, predict_nodes, train_nodes
             )
 
         domain_needs = {}
         if self._use_core:  # TODO: JUZL: is this right?
             domain_needs["domain"] = "domain_provider"
 
+
+        # TODO: JUZL: Test all of this
         regex_handler_node_name = f"run_{RegexMessageHandlerGraphComponent.__name__}"
         predict_nodes[regex_handler_node_name] = SchemaNode(
             **default_predict_kwargs,
@@ -674,7 +675,7 @@ class DefaultV1Recipe(Recipe):
             config={},
         )
 
-        predict_nodes["`nlu_prediction_to_history_adder`"] = SchemaNode(
+        predict_nodes["nlu_prediction_to_history_adder"] = SchemaNode(
             **default_predict_kwargs,
             needs={
                 "predictions": regex_handler_node_name,
@@ -764,7 +765,6 @@ class DefaultV1Recipe(Recipe):
                     last_run_node = self._add_nlu_predict_node(
                         predict_nodes, new_node, component_name, last_run_node
                     )
-
 
         return last_run_node
 

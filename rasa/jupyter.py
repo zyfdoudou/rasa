@@ -35,7 +35,7 @@ def chat(
 
     if model_path:
 
-        agent = rasa.core.agent.create_agent(model_path, endpoints)
+        agent = rasa.core.agent.load_agent(model_path=model_path, endpoints=endpoints)
 
     elif agent is not None and interpreter is not None:
         # HACK: this skips loading the interpreter and directly

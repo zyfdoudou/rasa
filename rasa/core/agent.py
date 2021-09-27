@@ -46,7 +46,7 @@ from rasa.core.tracker_store import (
     InMemoryTrackerStore,
     TrackerStore,
 )
-from rasa.shared.core.trackers import DialogueStateTracker
+from rasa.shared.core.trackers import DialogueStateTracker, EventVerbosity
 import rasa.core.utils
 from rasa.exceptions import ModelNotFound
 from rasa.shared.importers.importer import TrainingDataImporter
@@ -191,9 +191,7 @@ async def _pull_model_and_fingerprint(
                 with open(model_path, "wb") as file:
                     file.write(await resp.read())
 
-                logger.debug(
-                    "Saved model to '{}'".format(os.path.abspath(model_path))
-                )
+                logger.debug("Saved model to '{}'".format(os.path.abspath(model_path)))
 
                 # return the new fingerprint
                 return resp.headers.get("ETag")
@@ -234,34 +232,6 @@ async def schedule_model_pulling(
     )
 
 
-def create_agent(model: Text, endpoints: Text = None) -> "Agent":
-    """Create an agent instance based on a stored model.
-
-    Args:
-        model: file path to the stored model
-        endpoints: file path to the used endpoint configuration
-    """
-    from rasa.core.tracker_store import TrackerStore
-    from rasa.core.utils import AvailableEndpoints
-    from rasa.core.brokers.broker import EventBroker
-    import rasa.utils.common
-
-    # TODO: JUZL: Can we move all this into Agent as we do it in multiple places?
-    _endpoints = AvailableEndpoints.read_endpoints(endpoints)
-
-    _broker = rasa.utils.common.run_in_loop(EventBroker.create(_endpoints.event_broker))
-    _tracker_store = TrackerStore.create(_endpoints.tracker_store, event_broker=_broker)
-    _lock_store = LockStore.create(_endpoints.lock_store)
-
-    return Agent.load(
-        model,
-        generator=_endpoints.nlg,
-        tracker_store=_tracker_store,
-        lock_store=_lock_store,
-        action_endpoint=_endpoints.action,
-    )
-
-
 async def load_agent(
     model_path: Optional[Text] = None,
     model_server: Optional[EndpointConfig] = None,
@@ -288,8 +258,6 @@ async def load_agent(
     generator = None
     action_endpoint = None
 
-    # TODO: JUZL: get model_server from endpoints.
-
     if endpoints:
         broker = rasa.utils.common.run_in_loop(
             EventBroker.create(endpoints.event_broker)
@@ -300,6 +268,7 @@ async def load_agent(
         lock_store = LockStore.create(endpoints.lock_store)
         generator = endpoints.nlg
         action_endpoint = endpoints.action
+        model_server = endpoints.model if endpoints.model else model_server
 
     try:
         if model_server is not None:
@@ -363,15 +332,12 @@ class Agent:
         lock_store: Optional[LockStore] = None,
         action_endpoint: Optional[EndpointConfig] = None,
         fingerprint: Optional[Text] = None,
-        model_directory: Optional[Text] = None,
         model_server: Optional[EndpointConfig] = None,
         remote_storage: Optional[Text] = None,
         path_to_model_archive: Optional[Text] = None,
         graph_runner: Optional[GraphRunner] = None,
     ):
         self.domain = domain
-
-        # TODO: JUZL: Is this tested?
         self.domain.check_missing_responses()
 
         self.nlg = NaturalLanguageGenerator.create(generator, self.domain)
@@ -386,9 +352,7 @@ class Agent:
         self.path_to_model_archive = path_to_model_archive
 
     def update_model(
-        self,
-        model_path: Union[Text, Path],
-        fingerprint: Optional[Text],
+        self, model_path: Union[Text, Path], fingerprint: Optional[Text] = None,
     ) -> None:
         domain, graph_runner = self.unpack_model(model_path)
         self.domain = domain
@@ -401,7 +365,6 @@ class Agent:
         if hasattr(self.nlg, "responses"):
             self.nlg.responses = domain.responses if domain else {}
 
-        # TODO: JUZL: Do we test this actually happens?
         self.initialize_processor()
 
     @classmethod
@@ -415,17 +378,8 @@ class Agent:
         model_server: Optional[EndpointConfig] = None,
         remote_storage: Optional[Text] = None,
         path_to_model_archive: Optional[Text] = None,
-        new_config: Optional[Dict] = None,
-        finetuning_epoch_fraction: float = 1.0,
     ) -> "Agent":
         """Load a persisted model from the passed path."""
-
-        # TODO: JUZL:
-        # new_config=new_config,
-        # finetuning_epoch_fraction=finetuning_epoch_fraction,
-        # # ensures the domain hasn't changed between test and train
-        # domain.compare_with_specification(core_model)
-
         domain, graph_runner = cls.unpack_model(model_path)
 
         agent = cls(
@@ -434,7 +388,6 @@ class Agent:
             tracker_store=tracker_store,
             lock_store=lock_store,
             action_endpoint=action_endpoint,
-            model_directory=model_path,
             model_server=model_server,
             remote_storage=remote_storage,
             path_to_model_archive=path_to_model_archive,
@@ -444,12 +397,12 @@ class Agent:
         agent.initialize_processor()
         return agent
 
-    # TODO: JUZL: Should this be here?
     @staticmethod
     def unpack_model(model_path: Union[Text, Path]) -> Tuple[Domain, GraphRunner]:
         model_tar = rasa.model.get_latest_model(model_path)
         if not model_tar:
             raise ModelNotFound(f"No model found at path {model_path}.")
+
         tmp_model_path = tempfile.mkdtemp()
         metadata, graph_runner = loader.load_predict_graph_runner(
             Path(tmp_model_path), Path(model_tar), LocalModelStorage, DaskGraphRunner,
@@ -458,12 +411,9 @@ class Agent:
 
     def is_ready(self) -> bool:
         """Check if all necessary components are instantiated to use agent."""
-        # TODO: JUZL: check more?
         return self.tracker_store is not None and self.processor is not None
 
-    async def parse_message(
-        self, message_data: Text, tracker: DialogueStateTracker = None
-    ) -> Dict[Text, Any]:
+    async def parse_message(self, message_data: Text) -> Dict[Text, Any]:
         """Handles message text and intent payload input messages.
 
         The return value of this function is parsed_data.
@@ -494,41 +444,39 @@ class Agent:
                 "interpreter and a tracker store."
             )
         message = UserMessage(message_data)
-        return await self.processor.parse_message(message, tracker)
+        return await self.processor.parse_message(message)
 
     async def handle_message(
         self,
         message: UserMessage,
-        message_preprocessor: Optional[Callable[[Text], Text]] = None,
     ) -> Optional[List[Dict[Text, Any]]]:
         """Handle a single message."""
         if not self.is_ready():
             logger.info("Ignoring message as there is no agent to handle it.")
             return None
 
-        if message_preprocessor:
-            self.processor.message_preprocessor = message_preprocessor
-
         async with self.lock_store.lock(message.sender_id):
             return await self.processor.handle_message(message)
 
-    async def predict_next(
+    async def predict_next_for_sender_id(
         self, sender_id: Text
     ) -> Optional[Dict[Text, Any]]:
+        """Predict the next action for a sender id."""
+        return await self.processor.predict_next_for_sender_id(sender_id)
+
+    async def predict_next_with_tracker(
+        self,
+        tracker: DialogueStateTracker,
+        verbosity: EventVerbosity = EventVerbosity.AFTER_RESTART,
+    ) -> Optional[Dict[Text, Any]]:
         """Predict the next action."""
-        return await self.processor.predict_next(sender_id)
+        return self.processor.predict_next_with_tracker(tracker, verbosity)
 
     async def log_message(
         self,
         message: UserMessage,
-        message_preprocessor: Optional[Callable[[Text], Text]] = None,
-        **kwargs: Any,
     ) -> DialogueStateTracker:
         """Append a message to a dialogue - does not predict actions."""
-        # TODO: JUZL: Should this just be for this message?
-        if message_preprocessor:
-            self.processor.message_preprocessor = message_preprocessor
-
         return await self.processor.log_message(message)
 
     async def execute_action(
@@ -563,7 +511,6 @@ class Agent:
     async def handle_text(
         self,
         text_message: Union[Text, Dict[Text, Any]],
-        message_preprocessor: Optional[Callable[[Text], Text]] = None,
         output_channel: Optional[OutputChannel] = None,
         sender_id: Optional[Text] = DEFAULT_SENDER_ID,
     ) -> Optional[List[Dict[Text, Any]]]:
@@ -593,7 +540,7 @@ class Agent:
 
         msg = UserMessage(text_message.get("text"), output_channel, sender_id)
 
-        return await self.handle_message(msg, message_preprocessor)
+        return await self.handle_message(msg)
 
     def _set_fingerprint(self, fingerprint: Optional[Text] = None) -> None:
 
@@ -633,7 +580,6 @@ class Agent:
             fontsize,
         )
 
-
     @staticmethod
     def _create_tracker_store(
         store: Optional[TrackerStore], domain: Domain
@@ -669,7 +615,6 @@ class Agent:
 
         if persistor is not None:
             target_path = tempfile.mkdtemp()
-            # TODO: JUZL: This needs to not unpack
             persistor.retrieve(model_name, target_path)
 
             return Agent.load(
@@ -684,7 +629,6 @@ class Agent:
 
         return None
 
-    # TODO: JUZL:
     def initialize_processor(self) -> None:
         processor = MessageProcessor(
             graph_runner=self.graph_runner,

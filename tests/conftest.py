@@ -174,7 +174,10 @@ def event_loop(request: Request) -> Iterator[asyncio.AbstractEventLoop]:
 
 @pytest.fixture(scope="session")
 async def _trained_default_agent(
-    tmp_path_factory: TempPathFactory, stories_path: Text, nlu_data_path: Text, trained_async: Callable
+    tmp_path_factory: TempPathFactory,
+    stories_path: Text,
+    nlu_data_path: Text,
+    trained_async: Callable,
 ) -> Agent:
     project_path = tmp_path_factory.mktemp("project")
 
@@ -195,10 +198,12 @@ async def _trained_default_agent(
     config_path = project_path / "config.yml"
     rasa.shared.utils.io.write_text_file(config, config_path)
     model_path = train(
-        "data/test_domains/default_with_slots.yml", str(config_path), [stories_path, nlu_data_path]
+        "data/test_domains/default_with_slots.yml",
+        str(config_path),
+        [stories_path, nlu_data_path],
     ).model
 
-    return await load_agent(model_path)
+    return await load_agent(model_path=model_path)
 
 
 @pytest.fixture()
@@ -382,6 +387,7 @@ def unpacked_trained_rasa_model(
     # with get_model(trained_rasa_model) as path:
     #     yield path
     pass
+
 
 @pytest.fixture(scope="session")
 async def trained_core_model(

@@ -6,9 +6,7 @@ from typing import (
     Optional,
 )
 
-from rasa.shared.constants import (
-    DEFAULT_MODELS_PATH,
-)
+from rasa.shared.constants import DEFAULT_MODELS_PATH
 
 from rasa.exceptions import ModelNotFound
 
@@ -67,4 +65,3 @@ def get_latest_model(model_path: Text = DEFAULT_MODELS_PATH) -> Optional[Text]:
         return None
 
     return max(list_of_files, key=os.path.getctime)
-

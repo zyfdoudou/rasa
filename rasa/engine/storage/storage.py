@@ -133,6 +133,7 @@ class ModelMetadata:
             Instantiated `ModelMetadata`.
         """
         from rasa.engine.graph import GraphSchema
+
         return ModelMetadata(
             trained_at=datetime.fromisoformat(serialized["trained_at"]),
             rasa_open_source_version=serialized["rasa_open_source_version"],

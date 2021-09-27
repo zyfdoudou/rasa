@@ -149,8 +149,8 @@ async def test_random_seed(
     processor_1 = agent_1.create_processor()
     processor_2 = agent_2.create_processor()
 
-    probs_1 = await processor_1.predict_next("1")
-    probs_2 = await processor_2.predict_next("2")
+    probs_1 = await processor_1.predict_next_for_sender_id("1")
+    probs_2 = await processor_2.predict_next_for_sender_id("2")
     assert probs_1["confidence"] == probs_2["confidence"]
 
 

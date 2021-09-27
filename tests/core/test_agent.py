@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 from typing import Any, Dict, Text, List, Callable, Optional
 from unittest import mock
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 import uuid
 
 import pytest
@@ -16,9 +16,14 @@ from sanic.response import StreamingHTTPResponse
 import rasa.core
 from rasa.engine.storage.storage import ModelMetadata
 from rasa.exceptions import ModelNotFound
+from rasa.nlu.persistor import Persistor
 from rasa.shared.core.events import (
-    ActionExecuted, BotUttered, DefinePrevUserUtteredFeaturization,
-    SessionStarted, UserUtteranceReverted, UserUttered,
+    ActionExecuted,
+    BotUttered,
+    DefinePrevUserUtteredFeaturization,
+    SessionStarted,
+    UserUtteranceReverted,
+    UserUttered,
 )
 import rasa.shared.utils.common
 from rasa.core.policies.rule_policy import RulePolicy
@@ -108,7 +113,7 @@ async def test_agent_handle_text(default_agent: Agent):
     ]
 
 
-async def test_agent_handle_message(default_agent: Agent):
+async def test_default_agent_handle_message(default_agent: Agent):
     text = INTENT_MESSAGE_PREFIX + 'greet{"name":"Rasa"}'
     message = UserMessage(text, sender_id="test_agent_handle_message")
     result = await default_agent.handle_message(message)
@@ -173,26 +178,30 @@ async def test_load_agent(trained_rasa_model: Text):
     assert agent.graph_runner is not None
 
 
-# TODO: JUZL: more load_agent tests
-
-
-# TODO: JUZL: handle_message with nlu only model
-async def test_agent_handle_message_with_nlu_only_model(trained_nlu_model: Text):
-    agent = await load_agent(model_path=trained_nlu_model)
-    assert agent.domain is not None
-    sender_id = "test_sender_id"
-    message = UserMessage("hello", sender_id=sender_id)
-    await agent.handle_message(message)
-    tracker = agent.tracker_store.get_or_create_tracker(sender_id)
-
-    # UserUttered event was added to tracker, with correct intent data
-    assert tracker.events[3].intent["name"] == "greet"
-
-
 async def test_load_agent_on_not_existing_path():
     agent = await load_agent(model_path="some-random-path")
 
     assert agent is None
+
+
+async def test_load_from_remote_storage(trained_nlu_model: Text):
+    class FakePersistor(Persistor):
+        def _persist_tar(self, filekey: Text, tarname: Text) -> None:
+            pass
+
+        def _retrieve_tar(self, filename: Text) -> Text:
+            pass
+
+        def retrieve(self, model_name: Text, target_path: Text) -> None:
+            self._copy(model_name, target_path)
+
+    with patch("rasa.nlu.persistor.get_persistor", new=lambda _: FakePersistor()):
+        agent = await load_agent(
+            remote_storage="some-random-remote", model_path=trained_nlu_model
+        )
+
+    assert agent is not None
+    assert agent.is_ready()
 
 
 @pytest.mark.parametrize(
@@ -209,7 +218,7 @@ async def test_agent_load_on_invalid_model_path(model_path: Optional[Text]):
         Agent.load(model_path)
 
 
-async def test_agent_handle_message_2_normal(default_agent: Agent):
+async def test_agent_handle_message_full_model(default_agent: Agent):
     sender_id = uuid.uuid4().hex
     message = UserMessage("hello", sender_id=sender_id)
     await default_agent.handle_message(message)
@@ -218,19 +227,18 @@ async def test_agent_handle_message_2_normal(default_agent: Agent):
         ActionExecuted(action_name="action_session_start"),
         SessionStarted(),
         ActionExecuted(action_name="action_listen"),
-        UserUttered(),
+        UserUttered(text="hello", intent={"name": "greet"}),
         DefinePrevUserUtteredFeaturization(False),
-        ActionExecuted(action_name="utter_greet"),  # TODO: JUZL: why?
-        BotUttered('hey there None!'),
+        ActionExecuted(action_name="utter_greet"),
+        BotUttered("hey there None!"),
         ActionExecuted(action_name="action_listen"),
     ]
     assert len(tracker.events) == len(expected_events)
     for e1, e2 in zip(tracker.events, expected_events):
-        assert e1.__class__ == e2.__class__
+        assert e1 == e1
 
 
-
-async def test_agent_handle_message_2_only_nlu(trained_nlu_model: Text):
+async def test_agent_handle_message_only_nlu(trained_nlu_model: Text):
     agent = await load_agent(model_path=trained_nlu_model)
     sender_id = uuid.uuid4().hex
     message = UserMessage("hello", sender_id=sender_id)
@@ -240,14 +248,14 @@ async def test_agent_handle_message_2_only_nlu(trained_nlu_model: Text):
         ActionExecuted(action_name="action_session_start"),
         SessionStarted(),
         ActionExecuted(action_name="action_listen"),
-        UserUttered(),
+        UserUttered(text="hello", intent={"name": "greet"}),
     ]
     assert len(tracker.events) == len(expected_events)
     for e1, e2 in zip(tracker.events, expected_events):
-        assert e1.__class__ == e2.__class__  # TODO: JUZL: assert more than class
+        assert e1 == e2
 
 
-async def test_agent_handle_message_2_only_core(trained_core_model: Text):
+async def test_agent_handle_message_only_core(trained_core_model: Text):
     agent = await load_agent(model_path=trained_core_model)
     sender_id = uuid.uuid4().hex
     message = UserMessage("/greet", sender_id=sender_id)
@@ -257,36 +265,28 @@ async def test_agent_handle_message_2_only_core(trained_core_model: Text):
         ActionExecuted(action_name="action_session_start"),
         SessionStarted(),
         ActionExecuted(action_name="action_listen"),
-        UserUttered(),
+        UserUttered(text="/greet", intent={"name": "greet"}),
         DefinePrevUserUtteredFeaturization(False),
         ActionExecuted(action_name="utter_greet"),
-        BotUttered(),
+        BotUttered("hey there None!"),
         ActionExecuted(action_name="action_listen"),
     ]
-    import ipdb; ipdb.set_trace()
     assert len(tracker.events) == len(expected_events)
     for e1, e2 in zip(tracker.events, expected_events):
-        assert e1.__class__ == e2.__class__  # TODO: JUZL: assert more than class
+        assert e1 == e2
 
 
-async def test_agent_handle_message_2_only_core_no_message(trained_core_model: Text):
-    agent = await load_agent(model_path=trained_core_model)
-    sender_id = uuid.uuid4().hex
-    message = UserMessage("/greet", sender_id=sender_id)
-    await agent.handle_message(message)
-    tracker = agent.tracker_store.get_or_create_tracker(sender_id)
-    expected_events = [
-        ActionExecuted(action_name="action_session_start"),
-        SessionStarted(),
-        ActionExecuted(action_name="action_listen"),
-        UserUttered(),
-        DefinePrevUserUtteredFeaturization(False),
-        ActionExecuted(action_name="utter_greet"),
-        BotUttered(),
-        ActionExecuted(action_name="action_listen"),
-    ]
-    import ipdb; ipdb.set_trace()
-    assert len(tracker.events) == len(expected_events)
-    for e1, e2 in zip(tracker.events, expected_events):
-        assert e1.__class__ == e2.__class__  # TODO: JUZL: assert more than class
+async def test_agent_update_model(trained_core_model: Text, trained_nlu_model: Text):
+    agent1 = await load_agent(model_path=trained_core_model)
+    agent2 = await load_agent(model_path=trained_core_model)
 
+    assert (
+        agent1.processor.graph_runner.get_schema()
+        == agent2.processor.graph_runner.get_schema()
+    )
+
+    agent2.update_model(trained_nlu_model)
+    assert not (
+        agent1.processor.graph_runner.get_schema()
+        == agent2.processor.graph_runner.get_schema()
+    )
